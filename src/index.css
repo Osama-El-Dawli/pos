@@ -1,0 +1,44 @@
+@import "tailwindcss";
+
+@theme {
+  --color-glass: rgba(255, 255, 255, 0.2);
+  --color-glass-border: rgba(255, 255, 255, 0.3);
+  --color-soft-blue: #e0f2fe;
+  --color-soft-yellow: #fef9c3;
+  --color-soft-cyan: #cffafe;
+}
+
+@layer base {
+  body {
+    @apply bg-gradient-to-br from-soft-blue via-soft-cyan to-soft-yellow min-h-screen text-slate-800 font-sans;
+  }
+}
+
+@utility glass-card {
+  background-color: rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 1.5rem;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+@utility neumorphic-btn {
+  @apply glass-card px-6 py-3 transition-all duration-200 active:scale-95 hover:bg-white/30;
+  box-shadow: 
+    8px 8px 16px rgba(0, 0, 0, 0.1),
+    -8px -8px 16px rgba(255, 255, 255, 0.8);
+}
+
+@utility glass-input {
+  background-color: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 1rem;
+  padding: 0.5rem 1rem;
+  backdrop-filter: blur(4px);
+  transition: all 0.2s;
+  
+  &:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.5);
+  }
+}
