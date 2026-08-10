@@ -423,7 +423,7 @@ const Wallets = () => {
       setShowAddForm(false);
     } else {
       const data = await res.json();
-      alert(data.error || "Failed to add wallet");
+      setNotification({ message: data.error || "Failed to add wallet", type: 'error' });
     }
   };
 
@@ -493,7 +493,7 @@ const Wallets = () => {
 
   const handleTransaction = async (id: number, type: 'withdraw' | 'deposit', amount: number) => {
     if (!amount || amount <= 0) {
-      alert("يرجى إدخال مبلغ صحيح");
+      setNotification({ message: "يرجى إدخال مبلغ صحيح", type: 'error' });
       return;
     }
     
@@ -536,7 +536,7 @@ const Wallets = () => {
       }, 2000);
     } else {
       const data = await res.json();
-      alert(data.error || "فشلت العملية");
+      setNotification({ message: data.error || "فشلت العملية", type: 'error' });
     }
   };
 
@@ -1404,10 +1404,22 @@ const Products = () => {
 
 const Expenses = () => {
   const { t } = useTranslation();
-  const { user } = useAppContext();
+  const { user, language } = useAppContext();
   const [expenses, setExpenses] = useState<any[]>([]);
   const [newExpense, setNewExpense] = useState({ description: '', amount: 0 });
   const [showAdd, setShowAdd] = useState(false);
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+
+  const filteredExpenses = expenses.filter(exp => {
+    if (!exp.date) return true;
+    const expDate = new Date(exp.date).toISOString().split('T')[0];
+    if (fromDate && expDate < fromDate) return false;
+    if (toDate && expDate > toDate) return false;
+    return true;
+  });
+
+  const totalFilteredAmount = filteredExpenses.reduce((sum, exp) => sum + (exp.amount || 0), 0);
 
   useEffect(() => {
     fetch('/api/expenses').then(res => res.json()).then(setExpenses);
@@ -1443,6 +1455,44 @@ const Expenses = () => {
         </NeumorphicButton>
       </div>
 
+      {/* Date Filter Bar */}
+      <GlassCard className="flex flex-wrap items-center gap-4 py-4">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-bold opacity-70">{language === 'ar' ? 'من تاريخ:' : 'From:'}</span>
+          <input 
+            type="date" 
+            className="glass-input text-slate-800" 
+            value={fromDate} 
+            onChange={e => setFromDate(e.target.value)} 
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-bold opacity-70">{language === 'ar' ? 'إلى تاريخ:' : 'To:'}</span>
+          <input 
+            type="date" 
+            className="glass-input text-slate-800" 
+            value={toDate} 
+            onChange={e => setToDate(e.target.value)} 
+          />
+        </div>
+        {(fromDate || toDate) && (
+          <NeumorphicButton 
+            onClick={() => { setFromDate(''); setToDate(''); }} 
+            className="text-xs py-1 px-3 bg-red-500/20 text-red-700 hover:bg-red-500/30"
+          >
+            {language === 'ar' ? 'إعادة تعيين' : 'Reset'}
+          </NeumorphicButton>
+        )}
+        
+        {/* Total Summary */}
+        <div className="mr-auto flex items-center gap-3">
+          <span className="text-sm font-bold opacity-80">{language === 'ar' ? 'إجمالي المصروفات في الفترة المحددة:' : 'Total Filtered Expenses:'}</span>
+          <span className="text-2xl font-black text-red-600 bg-red-500/10 px-4 py-2 rounded-2xl">
+            {totalFilteredAmount}
+          </span>
+        </div>
+      </GlassCard>
+
       <GlassCard className="overflow-hidden">
         <table className="w-full text-right">
           <thead>
@@ -1454,7 +1504,7 @@ const Expenses = () => {
             </tr>
           </thead>
           <tbody>
-            {expenses.map(exp => (
+            {filteredExpenses.map(exp => (
               <tr key={exp.id} className="border-b border-white/10 hover:bg-white/10 transition-colors">
                 <td className="p-4">{exp.description}</td>
                 <td className="p-4 font-bold text-red-600">{exp.amount}</td>
@@ -1501,10 +1551,24 @@ const Expenses = () => {
 
 const Debts = () => {
   const { t } = useTranslation();
-  const { user } = useAppContext();
+  const { user, language } = useAppContext();
   const [debts, setDebts] = useState<any[]>([]);
   const [newDebt, setNewDebt] = useState({ person_name: '', amount_in: 0, amount_out: 0 });
   const [showAdd, setShowAdd] = useState(false);
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+
+  const filteredDebts = debts.filter(debt => {
+    if (!debt.date) return true;
+    const debtDate = new Date(debt.date).toISOString().split('T')[0];
+    if (fromDate && debtDate < fromDate) return false;
+    if (toDate && debtDate > toDate) return false;
+    return true;
+  });
+
+  const totalDebtOut = filteredDebts.reduce((sum, d) => sum + (d.amount_out || 0), 0);
+  const totalDebtIn = filteredDebts.reduce((sum, d) => sum + (d.amount_in || 0), 0);
+  const totalNetDebt = totalDebtOut - totalDebtIn;
 
   useEffect(() => {
     fetch('/api/debts').then(res => res.json()).then(setDebts);
@@ -1553,8 +1617,56 @@ const Debts = () => {
         </NeumorphicButton>
       </div>
 
+      {/* Date Filter Bar */}
+      <GlassCard className="flex flex-wrap items-center gap-6 py-4">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-bold opacity-70">{language === 'ar' ? 'من تاريخ:' : 'From:'}</span>
+          <input 
+            type="date" 
+            className="glass-input text-slate-800" 
+            value={fromDate} 
+            onChange={e => setFromDate(e.target.value)} 
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-bold opacity-70">{language === 'ar' ? 'إلى تاريخ:' : 'To:'}</span>
+          <input 
+            type="date" 
+            className="glass-input text-slate-800" 
+            value={toDate} 
+            onChange={e => setToDate(e.target.value)} 
+          />
+        </div>
+        {(fromDate || toDate) && (
+          <NeumorphicButton 
+            onClick={() => { setFromDate(''); setToDate(''); }} 
+            className="text-xs py-1 px-3 bg-red-500/20 text-red-700 hover:bg-red-500/30"
+          >
+            {language === 'ar' ? 'إعادة تعيين' : 'Reset'}
+          </NeumorphicButton>
+        )}
+        
+        {/* Total Summary */}
+        <div className="mr-auto flex flex-wrap gap-4 items-center">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold opacity-75">{language === 'ar' ? 'إجمالي مبالغ خارجة:' : 'Total Out:'}</span>
+            <span className="text-sm font-bold text-red-600 bg-red-500/15 px-3 py-1 rounded-xl">{totalDebtOut}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold opacity-75">{language === 'ar' ? 'إجمالي مبالغ داخلة:' : 'Total In:'}</span>
+            <span className="text-sm font-bold text-green-600 bg-green-500/15 px-3 py-1 rounded-xl">{totalDebtIn}</span>
+          </div>
+          <div className="flex items-center gap-2 border-l border-white/20 pl-4">
+            <span className="text-sm font-bold opacity-80">{language === 'ar' ? 'صافي المديونية:' : 'Net Debt:'}</span>
+            <span className={`text-xl font-black px-4 py-1.5 rounded-2xl ${totalNetDebt > 0 ? 'text-red-600 bg-red-500/10' : 'text-green-600 bg-green-500/10'}`}>
+              {totalNetDebt}
+            </span>
+          </div>
+        </div>
+      </GlassCard>
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {debts.map(debt => (
+        {filteredDebts.map(debt => (
           <GlassCard key={debt.id} className="space-y-4">
             <div className="flex justify-between items-start">
               <div>
@@ -1975,7 +2087,7 @@ const UsersPage = () => {
       setShowAdd(false);
     } else {
       const data = await res.json();
-      alert(data.error || "Failed to add user");
+      setNotification({ message: data.error || "Failed to add user", type: 'error' });
     }
   };
 
