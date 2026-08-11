@@ -174,6 +174,33 @@ try {
   }
 }
 
+// Create debt_transactions table if it doesn't already exist
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS debt_transactions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      debt_id INTEGER,
+      type TEXT,
+      amount REAL,
+      date DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+  // Seed from existing debts if history table was just created and is empty
+  const txCount: any = db.prepare("SELECT COUNT(*) as cnt FROM debt_transactions").get();
+  if (txCount && txCount.cnt === 0) {
+    db.exec(`
+      INSERT INTO debt_transactions (debt_id, type, amount, date)
+      SELECT id, 'out', amount_out, date FROM debts WHERE amount_out > 0;
+    `);
+    db.exec(`
+      INSERT INTO debt_transactions (debt_id, type, amount, date)
+      SELECT id, 'in', amount_in, date FROM debts WHERE amount_in > 0;
+    `);
+  }
+} catch (err) {
+  console.log("Debt transactions migration failed:", err);
+}
+
 // Seed Admin User if not exists
 const adminExists = db.prepare("SELECT * FROM users WHERE username = 'admin'").get();
 if (!adminExists) {
@@ -541,20 +568,91 @@ app.get("/api/debts", (req, res) => {
 
 app.post("/api/debts", (req, res) => {
   const { person_name, amount_in, amount_out } = req.body;
-  const result = db.prepare("INSERT INTO debts (person_name, amount_in, amount_out) VALUES (?, ?, ?)")
-    .run(person_name, amount_in, amount_out);
-  res.json({ id: result.lastInsertRowid });
+  const transaction = db.transaction(() => {
+    const result = db.prepare("INSERT INTO debts (person_name, amount_in, amount_out) VALUES (?, ?, ?)")
+      .run(person_name, amount_in || 0, amount_out || 0);
+    const debtId = result.lastInsertRowid;
+    
+    if (amount_out > 0) {
+      db.prepare("INSERT INTO debt_transactions (debt_id, type, amount) VALUES (?, 'out', ?)")
+        .run(debtId, amount_out);
+    }
+    if (amount_in > 0) {
+      db.prepare("INSERT INTO debt_transactions (debt_id, type, amount) VALUES (?, 'in', ?)")
+        .run(debtId, amount_in);
+    }
+    return debtId;
+  });
+  
+  try {
+    const id = transaction();
+    res.json({ id });
+  } catch (err) {
+    res.status(500).json({ error: "Database error" });
+  }
 });
 
 app.delete("/api/debts/:id", (req, res) => {
-  db.prepare("DELETE FROM debts WHERE id = ?").run(req.params.id);
-  res.json({ success: true });
+  const id = req.params.id;
+  const transaction = db.transaction(() => {
+    db.prepare("DELETE FROM debt_transactions WHERE debt_id = ?").run(id);
+    db.prepare("DELETE FROM debts WHERE id = ?").run(id);
+  });
+  try {
+    transaction();
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: "Database error" });
+  }
 });
 
 app.put("/api/debts/:id", (req, res) => {
   const { amount_in, amount_out } = req.body;
-  db.prepare("UPDATE debts SET amount_in = ?, amount_out = ? WHERE id = ?").run(amount_in, amount_out, req.params.id);
-  res.json({ success: true });
+  const id = req.params.id;
+  
+  const transaction = db.transaction(() => {
+    const oldDebt: any = db.prepare("SELECT * FROM debts WHERE id = ?").get(id);
+    if (!oldDebt) throw new Error("Debt record not found");
+
+    db.prepare("UPDATE debts SET amount_in = ?, amount_out = ? WHERE id = ?")
+      .run(amount_in || 0, amount_out || 0, id);
+    
+    const diff_out = (amount_out || 0) - (oldDebt.amount_out || 0);
+    const diff_in = (amount_in || 0) - (oldDebt.amount_in || 0);
+
+    if (diff_out > 0) {
+      db.prepare("INSERT INTO debt_transactions (debt_id, type, amount) VALUES (?, 'out', ?)")
+        .run(id, diff_out);
+    } else if (diff_out < 0) {
+      db.prepare("INSERT INTO debt_transactions (debt_id, type, amount) VALUES (?, 'in', ?)")
+        .run(id, Math.abs(diff_out));
+    }
+
+    if (diff_in > 0) {
+      db.prepare("INSERT INTO debt_transactions (debt_id, type, amount) VALUES (?, 'in', ?)")
+        .run(id, diff_in);
+    } else if (diff_in < 0) {
+      db.prepare("INSERT INTO debt_transactions (debt_id, type, amount) VALUES (?, 'out', ?)")
+        .run(id, Math.abs(diff_in));
+    }
+  });
+
+  try {
+    transaction();
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Database error" });
+  }
+});
+
+app.get("/api/debts/:id/transactions", (req, res) => {
+  const id = req.params.id;
+  try {
+    const data = db.prepare("SELECT * FROM debt_transactions WHERE debt_id = ? ORDER BY date DESC").all(id);
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: "Database error" });
+  }
 });
 
 // Expenses CRUD
@@ -613,9 +711,9 @@ app.delete("/api/treasury/:id", (req, res) => {
 
 // Starting Treasury CRUD
 app.get("/api/starting-treasury", (req, res) => {
-  const date = req.query.date || new Date().toISOString().split('T')[0];
-  const filter = date + "%";
-  const data = db.prepare("SELECT * FROM starting_treasury WHERE date LIKE ? ORDER BY date DESC").all(filter);
+  const startDate = req.query.startDate || req.query.date || new Date().toISOString().split('T')[0];
+  const endDate = req.query.endDate || req.query.date || startDate;
+  const data = db.prepare("SELECT * FROM starting_treasury WHERE date(date) >= date(?) AND date(date) <= date(?) ORDER BY date DESC").all(startDate, endDate);
   res.json(data);
 });
 
@@ -767,24 +865,24 @@ app.put("/api/users/:id/password", (req, res) => {
 });
 
 app.get("/api/reports/summary", (req, res) => {
-  const date = req.query.date || new Date().toISOString().split('T')[0];
-  const filter = date + "%";
+  const startDate = req.query.startDate || req.query.date || new Date().toISOString().split('T')[0];
+  const endDate = req.query.endDate || req.query.date || startDate;
 
-  const sales = db.prepare("SELECT SUM(total_price) as total FROM sales WHERE date LIKE ?").get(filter);
-  const expenses = db.prepare("SELECT SUM(amount) as total FROM expenses WHERE date LIKE ?").get(filter);
-  const debts = db.prepare("SELECT SUM(amount_out - amount_in) as total FROM debts WHERE date LIKE ?").get(filter);
+  const sales = db.prepare("SELECT SUM(total_price) as total FROM sales WHERE date(date) >= date(?) AND date(date) <= date(?)").get(startDate, endDate);
+  const expenses = db.prepare("SELECT SUM(amount) as total FROM expenses WHERE date(date) >= date(?) AND date(date) <= date(?)").get(startDate, endDate);
+  const debts = db.prepare("SELECT SUM(amount_out - amount_in) as total FROM debts WHERE date(date) >= date(?) AND date(date) <= date(?)").get(startDate, endDate);
   
-  // Latest treasury log for this date
-  const treasury = db.prepare("SELECT * FROM treasury_log WHERE date LIKE ? ORDER BY date DESC LIMIT 1").get(filter) || {};
+  // Latest treasury log at or before the endDate of the range
+  const treasury = db.prepare("SELECT * FROM treasury_log WHERE date(date) <= date(?) ORDER BY date DESC LIMIT 1").get(endDate) || {};
   
-  // Total wallets balance (this is current, not historical, but we'll use it for now)
+  // Total wallets balance (current)
   const wallets = db.prepare("SELECT SUM(balance) as total FROM wallets").get();
 
-  // Starting treasury for this date
-  const startingTreasury = db.prepare("SELECT SUM(amount) as total FROM starting_treasury WHERE date LIKE ?").get(filter);
+  // Starting treasury in the range
+  const startingTreasury = db.prepare("SELECT SUM(amount) as total FROM starting_treasury WHERE date(date) >= date(?) AND date(date) <= date(?)").get(startDate, endDate);
 
-  const total_cash = (treasury.cash_200 * 200) + (treasury.cash_100 * 100) + (treasury.cash_50 * 50) + 
-                     (treasury.cash_20 * 20) + (treasury.cash_10 * 10) + (treasury.cash_5 * 5);
+  const total_cash = ((treasury.cash_200 || 0) * 200) + ((treasury.cash_100 || 0) * 100) + ((treasury.cash_50 || 0) * 50) + 
+                     ((treasury.cash_20 || 0) * 20) + ((treasury.cash_10 || 0) * 10) + ((treasury.cash_5 || 0) * 5);
   
   const total_machines = (treasury.fawry || 0) + (treasury.neopay || 0) + (treasury.superpay || 0) + 
                          (treasury.new_machine1 || 0) + (treasury.new_machine2 || 0);

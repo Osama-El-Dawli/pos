@@ -49,6 +49,25 @@ const resetMockWalletsIfNeeded = () => {
   }
 };
 
+const resetMockDebtsIfNeeded = () => {
+  const debts = getLocalItem('debts');
+  let txs = getLocalItem('debt_transactions');
+  
+  // For each debt that has no transactions at all, seed an initial entry
+  debts.forEach((d: any) => {
+    const hasTx = txs.some((t: any) => t.debt_id == d.id);
+    if (!hasTx) {
+      if (d.amount_out > 0) {
+        txs.push({ id: nextId(txs), debt_id: d.id, type: 'out', amount: d.amount_out, date: d.date || new Date().toISOString() });
+      }
+      if (d.amount_in > 0) {
+        txs.push({ id: nextId(txs), debt_id: d.id, type: 'in', amount: d.amount_in, date: d.date || new Date().toISOString() });
+      }
+    }
+  });
+  setLocalItem('debt_transactions', txs);
+};
+
 export const setupMockServer = () => {
   const originalFetch = window.fetch;
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -59,6 +78,7 @@ export const setupMockServer = () => {
     if (!urlStr.includes('/api/')) return originalFetch(input, init);
 
     resetMockWalletsIfNeeded();
+    resetMockDebtsIfNeeded();
 
     const jsonResponse = (data: any) => new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
     const errorResponse = (msg: string) => new Response(JSON.stringify({ error: msg }), { status: 400, headers: { 'Content-Type': 'application/json' } });
@@ -343,8 +363,24 @@ export const setupMockServer = () => {
         let debts = getLocalItem('debts');
         if (method === 'GET') return jsonResponse(debts);
         if (method === 'POST') {
-            const newDebt = { ...body, id: nextId(debts), date: new Date().toISOString() };
+            const newDebt = { 
+              person_name: body.person_name,
+              amount_in: Number(body.amount_in) || 0,
+              amount_out: Number(body.amount_out) || 0,
+              id: nextId(debts), 
+              date: new Date().toISOString() 
+            };
             setLocalItem('debts', [...debts, newDebt]);
+            
+            let txs = getLocalItem('debt_transactions');
+            if (newDebt.amount_out > 0) {
+              txs.push({ id: nextId(txs), debt_id: newDebt.id, type: 'out', amount: newDebt.amount_out, date: new Date().toISOString() });
+            }
+            if (newDebt.amount_in > 0) {
+              txs.push({ id: nextId(txs), debt_id: newDebt.id, type: 'in', amount: newDebt.amount_in, date: new Date().toISOString() });
+            }
+            setLocalItem('debt_transactions', txs);
+            
             return jsonResponse({ id: newDebt.id });
         }
       }
@@ -353,17 +389,48 @@ export const setupMockServer = () => {
         let debts = getLocalItem('debts');
         if (method === 'DELETE') {
             setLocalItem('debts', debts.filter((d:any) => d.id !== id));
+            let txs = getLocalItem('debt_transactions');
+            setLocalItem('debt_transactions', txs.filter((t:any) => t.debt_id !== id));
             return jsonResponse({ success: true });
         }
         if (method === 'PUT') {
             const idx = debts.findIndex((d:any) => d.id === id);
             if(idx > -1) {
-                debts[idx].amount_in = body.amount_in;
-                debts[idx].amount_out = body.amount_out;
+                // Save old values as primitives BEFORE mutating the object (JS reference bug fix)
+                const oldAmountOut = Number(debts[idx].amount_out) || 0;
+                const oldAmountIn = Number(debts[idx].amount_in) || 0;
+                const newAmountIn = Number(body.amount_in) || 0;
+                const newAmountOut = Number(body.amount_out) || 0;
+                
+                debts[idx].amount_in = newAmountIn;
+                debts[idx].amount_out = newAmountOut;
                 setLocalItem('debts', debts);
+                
+                let txs = getLocalItem('debt_transactions');
+                const diff_out = newAmountOut - oldAmountOut;
+                const diff_in = newAmountIn - oldAmountIn;
+                
+                if (diff_out > 0) {
+                  txs.push({ id: nextId(txs), debt_id: id, type: 'out', amount: diff_out, date: new Date().toISOString() });
+                } else if (diff_out < 0) {
+                  txs.push({ id: nextId(txs), debt_id: id, type: 'in', amount: Math.abs(diff_out), date: new Date().toISOString() });
+                }
+                
+                if (diff_in > 0) {
+                  txs.push({ id: nextId(txs), debt_id: id, type: 'in', amount: diff_in, date: new Date().toISOString() });
+                } else if (diff_in < 0) {
+                  txs.push({ id: nextId(txs), debt_id: id, type: 'out', amount: Math.abs(diff_in), date: new Date().toISOString() });
+                }
+                setLocalItem('debt_transactions', txs);
             }
             return jsonResponse({ success: true });
         }
+      }
+      if (pathname.match(/^\/api\/debts\/\d+\/transactions$/)) {
+        const id = parseInt(pathname.split('/')[3]);
+        const txs = getLocalItem('debt_transactions').filter((t:any) => t.debt_id == id);
+        txs.sort((a:any, b:any) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        return jsonResponse(txs);
       }
 
       // --- Expenses ---
@@ -422,8 +489,13 @@ export const setupMockServer = () => {
       if (pathname === '/api/starting-treasury') {
         let starts = getLocalItem('starting_treasury');
         if (method === 'GET') {
-            const date = searchParams.get('date') || new Date().toISOString().split('T')[0];
-            const filtered = starts.filter((s:any) => s.date.startsWith(date));
+            const startDate = searchParams.get('startDate') || searchParams.get('date') || new Date().toISOString().split('T')[0];
+            const endDate = searchParams.get('endDate') || searchParams.get('date') || startDate;
+            const filtered = starts.filter((s:any) => {
+              if (!s.date) return false;
+              const d = s.date.split('T')[0];
+              return d >= startDate && d <= endDate;
+            });
             filtered.sort((a:any, b:any) => new Date(b.date).getTime() - new Date(a.date).getTime());
             return jsonResponse(filtered);
         }
@@ -475,13 +547,30 @@ export const setupMockServer = () => {
 
       // --- Reports ---
       if (pathname === '/api/reports/summary') {
-        const date = searchParams.get('date') || new Date().toISOString().split('T')[0];
-        const sales = getLocalItem('sales').filter((s:any) => s.date.startsWith(date));
-        const expenses = getLocalItem('expenses').filter((e:any) => e.date.startsWith(date));
-        const debts = getLocalItem('debts').filter((d:any) => d.date.startsWith(date));
-        const treasury = getLocalItem('treasury_log').filter((t:any) => t.date.startsWith(date)).sort((a:any, b:any) => new Date(b.date).getTime() - new Date(a.date).getTime())[0] || {};
+        const startDate = searchParams.get('startDate') || searchParams.get('date') || new Date().toISOString().split('T')[0];
+        const endDate = searchParams.get('endDate') || searchParams.get('date') || startDate;
+
+        const isWithin = (dStr: string) => {
+          if (!dStr) return false;
+          const d = dStr.split(' ')[0].split('T')[0];
+          return d >= startDate && d <= endDate;
+        };
+
+        const sales = getLocalItem('sales').filter((s:any) => isWithin(s.date));
+        const expenses = getLocalItem('expenses').filter((e:any) => isWithin(e.date));
+        const debts = getLocalItem('debts').filter((d:any) => isWithin(d.date));
+        
+        // Latest treasury log at or before the endDate
+        const treasury = getLocalItem('treasury_log')
+            .filter((t:any) => {
+              if (!t.date) return false;
+              const d = t.date.split(' ')[0].split('T')[0];
+              return d <= endDate;
+            })
+            .sort((a:any, b:any) => new Date(b.date).getTime() - new Date(a.date).getTime())[0] || {};
+            
         const wallets = getLocalItem('wallets');
-        const starts = getLocalItem('starting_treasury').filter((s:any) => s.date.startsWith(date));
+        const starts = getLocalItem('starting_treasury').filter((s:any) => isWithin(s.date));
 
         const totalSales = sales.reduce((sum:number, s:any) => sum + s.total_price, 0);
         const totalExp = expenses.reduce((sum:number, e:any) => sum + e.amount, 0);

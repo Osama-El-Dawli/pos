@@ -26,7 +26,8 @@ import {
   Check,
   UserPlus,
   Coins,
-  TrendingUp
+  TrendingUp,
+  History
 } from 'lucide-react';
 import { AppProvider, useAppContext } from './contexts/AppContext';
 import './i18n';
@@ -1651,6 +1652,15 @@ const Debts = () => {
   const [showAdd, setShowAdd] = useState(false);
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
+  const [viewHistoryDebt, setViewHistoryDebt] = useState<any | null>(null);
+  const [historyTransactions, setHistoryTransactions] = useState<any[]>([]);
+
+  const handleFetchHistory = async (debt: any) => {
+    setViewHistoryDebt(debt);
+    const res = await fetch(`/api/debts/${debt.id}/transactions`);
+    const json = await res.json();
+    setHistoryTransactions(json);
+  };
 
   const filteredDebts = debts.filter(debt => {
     if (!debt.date) return true;
@@ -1683,16 +1693,28 @@ const Debts = () => {
     }
   };
 
-  const handleUpdate = async (id: number, field: 'amount_in' | 'amount_out', val: number) => {
-    const debt = debts.find(d => d.id === id);
-    const updated = { ...debt, [field]: val };
-    const res = await fetch(`/api/debts/${id}`, {
+  const [deltaValues, setDeltaValues] = useState<{[key: number]: {amount_in: number, amount_out: number}}>({});
+
+  const getDelta = (id: number) => deltaValues[id] || { amount_in: 0, amount_out: 0 };
+
+  const handleSaveAdjustment = async (debt: any) => {
+    const delta = getDelta(debt.id);
+    if (delta.amount_in === 0 && delta.amount_out === 0) return;
+
+    const updated = {
+      ...debt,
+      amount_in: (debt.amount_in || 0) + (delta.amount_in || 0),
+      amount_out: (debt.amount_out || 0) + (delta.amount_out || 0)
+    };
+    const res = await fetch(`/api/debts/${debt.id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updated)
     });
     if (res.ok) {
-      setDebts(debts.map(d => d.id === id ? updated : d));
+      setDebts(debts.map(d => d.id === debt.id ? updated : d));
+      // Reset the delta inputs back to zero
+      setDeltaValues(prev => ({ ...prev, [debt.id]: { amount_in: 0, amount_out: 0 } }));
     }
   };
 
@@ -1763,43 +1785,72 @@ const Debts = () => {
         {filteredDebts.map(debt => (
           <GlassCard key={debt.id} className="space-y-4">
             <div className="flex justify-between items-start">
-              <div>
-                <h3 className="text-xl font-bold">{debt.person_name}</h3>
-                <p className="text-xs opacity-50">{new Date(debt.date).toLocaleDateString()}</p>
-              </div>
-              {user?.role === 'admin' && (
-                <button onClick={() => handleDelete(debt.id)} className="text-red-500 hover:bg-red-500/10 p-2 rounded-xl">
-                  <Trash2 size={18} />
+              <h3 className="text-xl font-bold">{debt.person_name}</h3>
+              <div className="flex gap-1">
+                <button onClick={() => handleFetchHistory(debt)} className="text-blue-500 hover:bg-blue-500/10 p-2 rounded-xl" title="سجل المديونية">
+                  <History size={18} />
                 </button>
-              )}
+                {user?.role === 'admin' && (
+                  <button onClick={() => handleDelete(debt.id)} className="text-red-500 hover:bg-red-500/10 p-2 rounded-xl">
+                    <Trash2 size={18} />
+                  </button>
+                )}
+              </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            {/* Running totals display */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="text-center bg-red-500/10 rounded-xl py-2 px-3">
+                <p className="text-xs opacity-60 mb-0.5">{t('amount_out')}</p>
+                <p className="text-lg font-black text-red-600">{debt.amount_out || 0}</p>
+              </div>
+              <div className="text-center bg-green-500/10 rounded-xl py-2 px-3">
+                <p className="text-xs opacity-60 mb-0.5">{t('amount_in')}</p>
+                <p className="text-lg font-black text-green-600">{debt.amount_in || 0}</p>
+              </div>
+            </div>
+
+            {/* Delta inputs */}
+            <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <label className="text-xs opacity-60">{t('amount_out')}</label>
+                <label className="text-xs opacity-60">إضافة مديونية</label>
                 <input 
                   type="number" 
+                  min="0"
                   className="glass-input w-full text-red-600 font-bold" 
-                  value={debt.amount_out} 
-                  onChange={e => handleUpdate(debt.id, 'amount_out', Number(e.target.value))} 
+                  value={getDelta(debt.id).amount_out || ''}
+                  placeholder="0"
+                  onChange={e => setDeltaValues(prev => ({ ...prev, [debt.id]: { ...getDelta(debt.id), amount_out: Number(e.target.value) } }))}
+                  onKeyDown={e => { if (e.key === 'Enter') handleSaveAdjustment(debt); }}
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-xs opacity-60">{t('amount_in')}</label>
+                <label className="text-xs opacity-60">تسديد مديونية</label>
                 <input 
                   type="number" 
+                  min="0"
                   className="glass-input w-full text-green-600 font-bold" 
-                  value={debt.amount_in} 
-                  onChange={e => handleUpdate(debt.id, 'amount_in', Number(e.target.value))} 
+                  value={getDelta(debt.id).amount_in || ''}
+                  placeholder="0"
+                  onChange={e => setDeltaValues(prev => ({ ...prev, [debt.id]: { ...getDelta(debt.id), amount_in: Number(e.target.value) } }))}
+                  onKeyDown={e => { if (e.key === 'Enter') handleSaveAdjustment(debt); }}
                 />
               </div>
             </div>
 
-            <div className="pt-4 border-t border-white/20 flex justify-between items-center">
-              <span className="font-bold">{t('total_debt')}</span>
-              <span className={`text-2xl font-black ${debt.amount_out - debt.amount_in > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                {debt.amount_out - debt.amount_in}
-              </span>
+            <div className="pt-3 border-t border-white/20 flex justify-between items-center gap-3">
+              <div>
+                <span className="text-xs opacity-60 block">{t('total_debt')}</span>
+                <span className={`text-2xl font-black ${(debt.amount_out || 0) - (debt.amount_in || 0) > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                  {(debt.amount_out || 0) - (debt.amount_in || 0)}
+                </span>
+              </div>
+              <NeumorphicButton
+                onClick={() => handleSaveAdjustment(debt)}
+                className="bg-blue-500 text-white flex items-center gap-2 px-4 py-2"
+              >
+                <Check size={16} /> حفظ
+              </NeumorphicButton>
             </div>
           </GlassCard>
         ))}
@@ -1834,13 +1885,82 @@ const Debts = () => {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Debt History Modal */}
+      <AnimatePresence>
+        {viewHistoryDebt && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/20 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <GlassCard className="w-full max-w-2xl bg-white/95 max-h-[85vh] flex flex-col">
+              <div className="flex justify-between items-center mb-6 pb-4 border-b border-white/20">
+                <div className="flex items-center gap-2">
+                  <History className="text-blue-500" size={24} />
+                  <h2 className="text-2xl font-bold">سجل مديونية - {viewHistoryDebt.person_name}</h2>
+                </div>
+                <button onClick={() => setViewHistoryDebt(null)} className="p-1 hover:bg-black/5 rounded-lg"><X /></button>
+              </div>
+              
+              <div className="overflow-y-auto flex-1">
+                <table className="w-full text-right border-collapse">
+                  <thead>
+                    <tr className="border-b border-black/10 text-sm font-bold opacity-75">
+                      <th className="py-3 px-4">التاريخ والوقت</th>
+                      <th className="py-3 px-4">العملية</th>
+                      <th className="py-3 px-4">المبلغ</th>
+                      <th className="py-3 px-4">الرصيد المتبقي</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(() => {
+                      let runningTotal = 0;
+                      const chrono = [...historyTransactions].reverse();
+                      const mapped = chrono.map(tx => {
+                        if (tx.type === 'out') {
+                          runningTotal += tx.amount;
+                        } else {
+                          runningTotal -= tx.amount;
+                        }
+                        return { ...tx, runningTotal };
+                      });
+                      return mapped.reverse();
+                    })().map((tx) => (
+                      <tr key={tx.id} className="border-b border-black/5 hover:bg-black/5 transition-colors">
+                        <td className="py-3 px-4 text-xs opacity-75">
+                          {new Date(tx.date).toLocaleString('ar-EG', { dateStyle: 'medium', timeStyle: 'short' })}
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className={`text-xs px-2.5 py-1 rounded-full font-bold ${tx.type === 'out' ? 'bg-red-500/15 text-red-700' : 'bg-green-500/15 text-green-700'}`}>
+                            {tx.type === 'out' ? 'زيادة مديونية' : 'سداد مديونية'}
+                          </span>
+                        </td>
+                        <td className={`py-3 px-4 font-black ${tx.type === 'out' ? 'text-red-600' : 'text-green-600'}`}>
+                          {tx.type === 'out' ? '+' : '-'}{tx.amount}
+                        </td>
+                        <td className={`py-3 px-4 font-black ${tx.runningTotal > 0 ? 'text-red-700' : 'text-green-700'}`}>
+                          {tx.runningTotal}
+                        </td>
+                      </tr>
+                    ))}
+                    {historyTransactions.length === 0 && (
+                      <tr>
+                        <td colSpan={4} className="py-8 text-center opacity-60">لا يوجد سجل عمليات لهذه المديونية بعد.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </GlassCard>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 };
 
 const Reports = () => {
   const { t } = useTranslation();
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const today = new Date().toISOString().split('T')[0];
+  const [startDate, setStartDate] = useState(today);
+  const [endDate, setEndDate] = useState(today);
   const [data, setData] = useState<any>(null);
   const [startingTreasury, setStartingTreasury] = useState<any[]>([]);
   const [showAddStarting, setShowAddStarting] = useState(false);
@@ -1848,13 +1968,13 @@ const Reports = () => {
   const [editingStarting, setEditingStarting] = useState<any | null>(null);
 
   const fetchReport = async () => {
-    const res = await fetch(`/api/reports/summary?date=${date}`);
+    const res = await fetch(`/api/reports/summary?startDate=${startDate}&endDate=${endDate}`);
     const json = await res.json();
     setData(json);
   };
 
   const fetchStartingTreasury = async () => {
-    const res = await fetch(`/api/starting-treasury?date=${date}`);
+    const res = await fetch(`/api/starting-treasury?startDate=${startDate}&endDate=${endDate}`);
     const json = await res.json();
     setStartingTreasury(json);
   };
@@ -1862,13 +1982,13 @@ const Reports = () => {
   useEffect(() => {
     fetchReport();
     fetchStartingTreasury();
-  }, [date]);
+  }, [startDate, endDate]);
 
   const handleAddStarting = async () => {
     const res = await fetch('/api/starting-treasury', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...newStarting, date: date + "T00:00:00Z" })
+      body: JSON.stringify({ ...newStarting, date: startDate + "T00:00:00Z" })
     });
     if (res.ok) {
       fetchStartingTreasury();
@@ -1912,7 +2032,7 @@ const Reports = () => {
       { [t('net_profit')]: data.net_profit },
       { [t('total_treasury')]: data.total_treasury }
     ];
-    exportToExcel(exportData, `Report_${date}`);
+    exportToExcel(exportData, `Report_${startDate}_to_${endDate}`);
   };
 
   const handleExportPDF = () => {
@@ -1927,7 +2047,7 @@ const Reports = () => {
       [t('net_profit'), data.net_profit],
       [t('total_treasury'), data.total_treasury]
     ];
-    exportToPDF(exportData, `Report - ${date}`);
+    exportToPDF(exportData, `Report_${startDate}_to_${endDate}`);
   };
 
   return (
@@ -1936,8 +2056,12 @@ const Reports = () => {
         <h1 className="text-3xl font-bold">{t('reports')}</h1>
         <div className="flex gap-4 items-end">
           <div className="space-y-1">
-            <label className="text-sm font-bold opacity-70">تاريخ التقرير</label>
-            <input type="date" className="glass-input" value={date} onChange={e => setDate(e.target.value)} />
+            <label className="text-sm font-bold opacity-70">من تاريخ</label>
+            <input type="date" className="glass-input" value={startDate} onChange={e => setStartDate(e.target.value)} />
+          </div>
+          <div className="space-y-1">
+            <label className="text-sm font-bold opacity-70">إلى تاريخ</label>
+            <input type="date" className="glass-input" value={endDate} onChange={e => setEndDate(e.target.value)} />
           </div>
           <NeumorphicButton onClick={handleExportExcel} className="bg-green-600 text-white flex items-center gap-2">
             <FileSpreadsheet size={18} /> Excel
