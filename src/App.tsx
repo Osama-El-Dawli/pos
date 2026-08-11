@@ -513,6 +513,10 @@ const Wallets = () => {
     const wallet = wallets.find(w => w.id === id);
     if (wallet) {
       if (type === 'withdraw') {
+        if (amount > (wallet.balance ?? 0)) {
+          setNotification({ message: "المبلغ المراد سحبه أكبر من رصيد المحفظة", type: 'error' });
+          return;
+        }
         if (amount > (wallet.daily_withdraw_limit_rem ?? 10000)) {
           setNotification({ message: "المبلغ يتجاوز الحد اليومي للسحب المتبقي", type: 'error' });
           return;
@@ -545,14 +549,14 @@ const Wallets = () => {
           if (type === 'withdraw') {
             return { 
               ...w, 
-              balance: w.balance + amount,
+              balance: w.balance - amount,
               daily_withdraw_limit_rem: (w.daily_withdraw_limit_rem ?? 10000) - amount,
               monthly_withdraw_limit_rem: (w.monthly_withdraw_limit_rem ?? 50000) - amount
             };
           } else {
             return { 
               ...w, 
-              balance: w.balance - amount,
+              balance: w.balance + amount,
               daily_deposit_limit_rem: (w.daily_deposit_limit_rem ?? 10000) - amount,
               monthly_deposit_limit_rem: (w.monthly_deposit_limit_rem ?? 50000) - amount
             };

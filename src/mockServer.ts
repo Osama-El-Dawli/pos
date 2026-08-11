@@ -219,6 +219,9 @@ export const setupMockServer = () => {
 
         const wallet = wallets[wIdx];
         if (body.type === 'withdraw') {
+            if (body.amount > (wallet.balance ?? 0)) {
+                return errorResponse("المبلغ المراد سحبه أكبر من رصيد المحفظة");
+            }
             if (body.amount > (wallet.daily_withdraw_limit_rem ?? 10000)) {
                 return errorResponse("المبلغ يتجاوز الحد اليومي للسحب المتبقي");
             }
@@ -238,11 +241,11 @@ export const setupMockServer = () => {
         setLocalItem('wallet_transactions', [...txs, newTx]);
         
         if (body.type === 'withdraw') {
-            wallets[wIdx].balance += body.amount;
+            wallets[wIdx].balance -= body.amount;
             wallets[wIdx].monthly_withdraw_limit_rem = (wallets[wIdx].monthly_withdraw_limit_rem ?? 50000) - body.amount;
             wallets[wIdx].daily_withdraw_limit_rem = (wallets[wIdx].daily_withdraw_limit_rem ?? 10000) - body.amount;
         } else {
-            wallets[wIdx].balance -= body.amount;
+            wallets[wIdx].balance += body.amount;
             wallets[wIdx].monthly_deposit_limit_rem = (wallets[wIdx].monthly_deposit_limit_rem ?? 50000) - body.amount;
             wallets[wIdx].daily_deposit_limit_rem = (wallets[wIdx].daily_deposit_limit_rem ?? 10000) - body.amount;
         }
@@ -262,11 +265,11 @@ export const setupMockServer = () => {
          if (method === 'DELETE') {
           if (wIdx > -1) {
               if (tx.type === 'withdraw') {
-                  wallets[wIdx].balance -= tx.amount;
+                  wallets[wIdx].balance += tx.amount;
                   wallets[wIdx].monthly_withdraw_limit_rem = (wallets[wIdx].monthly_withdraw_limit_rem ?? 50000) + tx.amount;
                   wallets[wIdx].daily_withdraw_limit_rem = (wallets[wIdx].daily_withdraw_limit_rem ?? 10000) + tx.amount;
               } else {
-                  wallets[wIdx].balance += tx.amount;
+                  wallets[wIdx].balance -= tx.amount;
                   wallets[wIdx].monthly_deposit_limit_rem = (wallets[wIdx].monthly_deposit_limit_rem ?? 50000) + tx.amount;
                   wallets[wIdx].daily_deposit_limit_rem = (wallets[wIdx].daily_deposit_limit_rem ?? 10000) + tx.amount;
               }
@@ -281,8 +284,12 @@ export const setupMockServer = () => {
           const newAmount = body.amount;
           if (wIdx > -1) {
               const wallet = wallets[wIdx];
-              // Validate limits with temporary limits (reversing the old transaction amount)
+              // Validate limits and balance with temporary values (reversing the old transaction amount)
               if (tx.type === 'withdraw') {
+                  const temp_balance = (wallet.balance ?? 0) + tx.amount;
+                  if (newAmount > temp_balance) {
+                      return errorResponse("المبلغ المراد سحبه أكبر من رصيد المحفظة");
+                  }
                   const temp_daily = (wallet.daily_withdraw_limit_rem ?? 10000) + tx.amount;
                   const temp_monthly = (wallet.monthly_withdraw_limit_rem ?? 50000) + tx.amount;
                   if (newAmount > temp_daily) {
@@ -304,22 +311,22 @@ export const setupMockServer = () => {
 
               // 1. Reverse old amount
               if (tx.type === 'withdraw') {
-                  wallets[wIdx].balance -= tx.amount;
+                  wallets[wIdx].balance += tx.amount;
                   wallets[wIdx].monthly_withdraw_limit_rem = (wallets[wIdx].monthly_withdraw_limit_rem ?? 50000) + tx.amount;
                   wallets[wIdx].daily_withdraw_limit_rem = (wallets[wIdx].daily_withdraw_limit_rem ?? 10000) + tx.amount;
               } else {
-                  wallets[wIdx].balance += tx.amount;
+                  wallets[wIdx].balance -= tx.amount;
                   wallets[wIdx].monthly_deposit_limit_rem = (wallets[wIdx].monthly_deposit_limit_rem ?? 50000) + tx.amount;
                   wallets[wIdx].daily_deposit_limit_rem = (wallets[wIdx].daily_deposit_limit_rem ?? 10000) + tx.amount;
               }
 
               // 2. Apply new amount
               if (tx.type === 'withdraw') {
-                  wallets[wIdx].balance += newAmount;
+                  wallets[wIdx].balance -= newAmount;
                   wallets[wIdx].monthly_withdraw_limit_rem = (wallets[wIdx].monthly_withdraw_limit_rem ?? 50000) - newAmount;
                   wallets[wIdx].daily_withdraw_limit_rem = (wallets[wIdx].daily_withdraw_limit_rem ?? 10000) - newAmount;
               } else {
-                  wallets[wIdx].balance -= newAmount;
+                  wallets[wIdx].balance += newAmount;
                   wallets[wIdx].monthly_deposit_limit_rem = (wallets[wIdx].monthly_deposit_limit_rem ?? 50000) - newAmount;
                   wallets[wIdx].daily_deposit_limit_rem = (wallets[wIdx].daily_deposit_limit_rem ?? 10000) - newAmount;
               }

@@ -484,6 +484,9 @@ app.post("/api/wallets/:id/transaction", (req, res) => {
   }
 
   if (type === 'withdraw') {
+    if (amount > wallet.balance) {
+      return res.status(400).json({ error: "المبلغ المراد سحبه أكبر من رصيد المحفظة" });
+    }
     if (amount > wallet.daily_withdraw_limit_rem) {
       return res.status(400).json({ error: "المبلغ يتجاوز الحد اليومي للسحب المتبقي" });
     }
@@ -506,7 +509,7 @@ app.post("/api/wallets/:id/transaction", (req, res) => {
     if (type === 'withdraw') {
       db.prepare(`
         UPDATE wallets 
-        SET balance = balance + ?, 
+        SET balance = balance - ?, 
             monthly_withdraw_limit_rem = monthly_withdraw_limit_rem - ?, 
             daily_withdraw_limit_rem = daily_withdraw_limit_rem - ? 
         WHERE id = ?
@@ -514,7 +517,7 @@ app.post("/api/wallets/:id/transaction", (req, res) => {
     } else {
       db.prepare(`
         UPDATE wallets 
-        SET balance = balance - ?, 
+        SET balance = balance + ?, 
             monthly_deposit_limit_rem = monthly_deposit_limit_rem - ?, 
             daily_deposit_limit_rem = daily_deposit_limit_rem - ? 
         WHERE id = ?
@@ -645,7 +648,7 @@ app.delete("/api/wallets/transactions/:id", (req, res) => {
     if (txData.type === 'withdraw') {
       db.prepare(`
         UPDATE wallets 
-        SET balance = balance - ?, 
+        SET balance = balance + ?, 
             daily_withdraw_limit_rem = daily_withdraw_limit_rem + ?, 
             monthly_withdraw_limit_rem = monthly_withdraw_limit_rem + ?
         WHERE id = ?
@@ -653,7 +656,7 @@ app.delete("/api/wallets/transactions/:id", (req, res) => {
     } else {
       db.prepare(`
         UPDATE wallets 
-        SET balance = balance + ?, 
+        SET balance = balance - ?, 
             daily_deposit_limit_rem = daily_deposit_limit_rem + ?, 
             monthly_deposit_limit_rem = monthly_deposit_limit_rem + ?
         WHERE id = ?
@@ -681,8 +684,12 @@ app.put("/api/wallets/transactions/:id", (req, res) => {
   const wallet: any = db.prepare("SELECT * FROM wallets WHERE id = ?").get(txData.wallet_id);
   if (!wallet) return res.status(404).json({ error: "Wallet not found" });
 
-  // Validate limits after reversing the old amount
+  // Validate limits and balance after reversing the old amount
   if (txData.type === 'withdraw') {
+    const temp_balance = wallet.balance + txData.amount;
+    if (amount > temp_balance) {
+      return res.status(400).json({ error: "المبلغ المراد سحبه أكبر من رصيد المحفظة" });
+    }
     const temp_daily = wallet.daily_withdraw_limit_rem + txData.amount;
     const temp_monthly = wallet.monthly_withdraw_limit_rem + txData.amount;
     if (amount > temp_daily) {
@@ -707,7 +714,7 @@ app.put("/api/wallets/transactions/:id", (req, res) => {
     if (txData.type === 'withdraw') {
       db.prepare(`
         UPDATE wallets 
-        SET balance = balance - ?, 
+        SET balance = balance + ?, 
             daily_withdraw_limit_rem = daily_withdraw_limit_rem + ?, 
             monthly_withdraw_limit_rem = monthly_withdraw_limit_rem + ?
         WHERE id = ?
@@ -715,7 +722,7 @@ app.put("/api/wallets/transactions/:id", (req, res) => {
     } else {
       db.prepare(`
         UPDATE wallets 
-        SET balance = balance + ?, 
+        SET balance = balance - ?, 
             daily_deposit_limit_rem = daily_deposit_limit_rem + ?, 
             monthly_deposit_limit_rem = monthly_deposit_limit_rem + ?
         WHERE id = ?
@@ -726,7 +733,7 @@ app.put("/api/wallets/transactions/:id", (req, res) => {
     if (txData.type === 'withdraw') {
       db.prepare(`
         UPDATE wallets 
-        SET balance = balance + ?, 
+        SET balance = balance - ?, 
             daily_withdraw_limit_rem = daily_withdraw_limit_rem - ?, 
             monthly_withdraw_limit_rem = monthly_withdraw_limit_rem - ?
         WHERE id = ?
@@ -734,7 +741,7 @@ app.put("/api/wallets/transactions/:id", (req, res) => {
     } else {
       db.prepare(`
         UPDATE wallets 
-        SET balance = balance - ?, 
+        SET balance = balance + ?, 
             daily_deposit_limit_rem = daily_deposit_limit_rem - ?, 
             monthly_deposit_limit_rem = monthly_deposit_limit_rem - ?
         WHERE id = ?
