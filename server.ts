@@ -35,10 +35,14 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT,
     number TEXT UNIQUE,
-    monthly_limit REAL,
-    daily_limit REAL,
-    monthly_limit_rem REAL,
-    daily_limit_rem REAL,
+    monthly_withdraw_limit REAL,
+    monthly_deposit_limit REAL,
+    daily_withdraw_limit REAL,
+    daily_deposit_limit REAL,
+    monthly_withdraw_limit_rem REAL,
+    monthly_deposit_limit_rem REAL,
+    daily_withdraw_limit_rem REAL,
+    daily_deposit_limit_rem REAL,
     balance REAL DEFAULT 0,
     last_daily_reset TEXT,
     last_monthly_reset TEXT
@@ -116,6 +120,36 @@ try {
 }
 
 try {
+  db.prepare("SELECT daily_withdraw_limit FROM wallets LIMIT 1").get();
+} catch (e) {
+  try {
+    db.exec(`
+      ALTER TABLE wallets ADD COLUMN daily_withdraw_limit REAL;
+      ALTER TABLE wallets ADD COLUMN daily_deposit_limit REAL;
+      ALTER TABLE wallets ADD COLUMN monthly_withdraw_limit REAL;
+      ALTER TABLE wallets ADD COLUMN monthly_deposit_limit REAL;
+      ALTER TABLE wallets ADD COLUMN daily_withdraw_limit_rem REAL;
+      ALTER TABLE wallets ADD COLUMN daily_deposit_limit_rem REAL;
+      ALTER TABLE wallets ADD COLUMN monthly_withdraw_limit_rem REAL;
+      ALTER TABLE wallets ADD COLUMN monthly_deposit_limit_rem REAL;
+    `);
+    db.exec(`
+      UPDATE wallets 
+      SET daily_withdraw_limit = COALESCE(daily_limit, 10000),
+          daily_deposit_limit = COALESCE(daily_limit, 10000),
+          monthly_withdraw_limit = COALESCE(monthly_limit, 50000),
+          monthly_deposit_limit = COALESCE(monthly_limit, 50000),
+          daily_withdraw_limit_rem = COALESCE(daily_limit_rem, COALESCE(daily_limit, 10000)),
+          daily_deposit_limit_rem = COALESCE(daily_limit_rem, COALESCE(daily_limit, 10000)),
+          monthly_withdraw_limit_rem = COALESCE(monthly_limit_rem, COALESCE(monthly_limit, 50000)),
+          monthly_deposit_limit_rem = COALESCE(monthly_limit_rem, COALESCE(monthly_limit, 50000));
+    `);
+  } catch (err) {
+    console.log("Wallets limits split migration failed or skipped:", err);
+  }
+}
+
+try {
   db.prepare("SELECT last_daily_reset FROM wallets LIMIT 1").get();
 } catch (e) {
   try {
@@ -161,7 +195,8 @@ function resetWalletsIfNeeded() {
   // Update daily limit remaining for wallets that haven't been reset today
   db.prepare(`
     UPDATE wallets 
-    SET daily_limit_rem = daily_limit, 
+    SET daily_withdraw_limit_rem = daily_withdraw_limit, 
+        daily_deposit_limit_rem = daily_deposit_limit,
         last_daily_reset = ? 
     WHERE last_daily_reset IS NULL OR last_daily_reset != ?
   `).run(todayStr, todayStr);
@@ -169,7 +204,8 @@ function resetWalletsIfNeeded() {
   // Update monthly limit remaining for wallets that haven't been reset this month
   db.prepare(`
     UPDATE wallets 
-    SET monthly_limit_rem = monthly_limit, 
+    SET monthly_withdraw_limit_rem = monthly_withdraw_limit, 
+        monthly_deposit_limit_rem = monthly_deposit_limit,
         last_monthly_reset = ? 
     WHERE last_monthly_reset IS NULL OR last_monthly_reset != ?
   `).run(monthStr, monthStr);
@@ -364,15 +400,31 @@ app.get("/api/wallets", (req, res) => {
 });
 
 app.put("/api/wallets/:id", (req, res) => {
-  const { name, number, monthly_limit, daily_limit, balance, monthly_limit_rem, daily_limit_rem } = req.body;
+  const { 
+    name, number, balance,
+    daily_withdraw_limit, daily_deposit_limit,
+    monthly_withdraw_limit, monthly_deposit_limit,
+    daily_withdraw_limit_rem, daily_deposit_limit_rem,
+    monthly_withdraw_limit_rem, monthly_deposit_limit_rem 
+  } = req.body;
   const { id } = req.params;
   try {
     db.prepare(`
       UPDATE wallets 
-      SET name = ?, number = ?, monthly_limit = ?, daily_limit = ?, balance = ?, 
-          monthly_limit_rem = ?, daily_limit_rem = ? 
+      SET name = ?, number = ?, balance = ?, 
+          daily_withdraw_limit = ?, daily_deposit_limit = ?, 
+          monthly_withdraw_limit = ?, monthly_deposit_limit = ?, 
+          daily_withdraw_limit_rem = ?, daily_deposit_limit_rem = ?, 
+          monthly_withdraw_limit_rem = ?, monthly_deposit_limit_rem = ?
       WHERE id = ?
-    `).run(name, number, monthly_limit, daily_limit, balance, monthly_limit_rem, daily_limit_rem, id);
+    `).run(
+      name, number, balance,
+      daily_withdraw_limit, daily_deposit_limit,
+      monthly_withdraw_limit, monthly_deposit_limit,
+      daily_withdraw_limit_rem, daily_deposit_limit_rem,
+      monthly_withdraw_limit_rem, monthly_deposit_limit_rem,
+      id
+    );
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: "Database error" });
@@ -385,7 +437,7 @@ app.get("/api/wallets/:id/transactions", (req, res) => {
 });
 
 app.post("/api/wallets", (req, res) => {
-  const { name, number, monthly_limit, daily_limit, balance } = req.body;
+  const { name, number, monthly_withdraw_limit, monthly_deposit_limit, daily_withdraw_limit, daily_deposit_limit, balance } = req.body;
   
   const existing = db.prepare("SELECT id FROM wallets WHERE number = ?").get(number);
   if (existing) {
@@ -401,9 +453,21 @@ app.post("/api/wallets", (req, res) => {
     const monthStr = `${year}-${month}`;
 
     const result = db.prepare(`
-      INSERT INTO wallets (name, number, monthly_limit, daily_limit, monthly_limit_rem, daily_limit_rem, balance, last_daily_reset, last_monthly_reset) 
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(name, number, monthly_limit, daily_limit, monthly_limit, daily_limit, balance, todayStr, monthStr);
+      INSERT INTO wallets (
+        name, number, balance, last_daily_reset, last_monthly_reset,
+        daily_withdraw_limit, daily_deposit_limit,
+        monthly_withdraw_limit, monthly_deposit_limit,
+        daily_withdraw_limit_rem, daily_deposit_limit_rem,
+        monthly_withdraw_limit_rem, monthly_deposit_limit_rem
+      ) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      name, number, balance || 0, todayStr, monthStr,
+      daily_withdraw_limit, daily_deposit_limit,
+      monthly_withdraw_limit, monthly_deposit_limit,
+      daily_withdraw_limit, daily_deposit_limit,
+      monthly_withdraw_limit, monthly_deposit_limit
+    );
     res.json({ id: result.lastInsertRowid });
   } catch (err) {
     res.status(500).json({ error: "Database error" });
@@ -414,6 +478,27 @@ app.post("/api/wallets/:id/transaction", (req, res) => {
   const { type, amount } = req.body;
   const walletId = req.params.id;
   
+  const wallet: any = db.prepare("SELECT * FROM wallets WHERE id = ?").get(walletId);
+  if (!wallet) {
+    return res.status(404).json({ error: "Wallet not found" });
+  }
+
+  if (type === 'withdraw') {
+    if (amount > wallet.daily_withdraw_limit_rem) {
+      return res.status(400).json({ error: "المبلغ يتجاوز الحد اليومي للسحب المتبقي" });
+    }
+    if (amount > wallet.monthly_withdraw_limit_rem) {
+      return res.status(400).json({ error: "المبلغ يتجاوز الحد الشهري للسحب المتبقي" });
+    }
+  } else {
+    if (amount > wallet.daily_deposit_limit_rem) {
+      return res.status(400).json({ error: "المبلغ يتجاوز الحد اليومي للإيداع المتبقي" });
+    }
+    if (amount > wallet.monthly_deposit_limit_rem) {
+      return res.status(400).json({ error: "المبلغ يتجاوز الحد الشهري للإيداع المتبقي" });
+    }
+  }
+
   const transaction = db.transaction(() => {
     db.prepare("INSERT INTO wallet_transactions (wallet_id, type, amount) VALUES (?, ?, ?)")
       .run(walletId, type, amount);
@@ -422,23 +507,27 @@ app.post("/api/wallets/:id/transaction", (req, res) => {
       db.prepare(`
         UPDATE wallets 
         SET balance = balance + ?, 
-            monthly_limit_rem = monthly_limit_rem - ?, 
-            daily_limit_rem = daily_limit_rem - ? 
+            monthly_withdraw_limit_rem = monthly_withdraw_limit_rem - ?, 
+            daily_withdraw_limit_rem = daily_withdraw_limit_rem - ? 
         WHERE id = ?
       `).run(amount, amount, amount, walletId);
     } else {
       db.prepare(`
         UPDATE wallets 
         SET balance = balance - ?, 
-            monthly_limit_rem = monthly_limit_rem + ?, 
-            daily_limit_rem = daily_limit_rem + ? 
+            monthly_deposit_limit_rem = monthly_deposit_limit_rem - ?, 
+            daily_deposit_limit_rem = daily_deposit_limit_rem - ? 
         WHERE id = ?
       `).run(amount, amount, amount, walletId);
     }
   });
   
-  transaction();
-  res.json({ success: true });
+  try {
+    transaction();
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Database error" });
+  }
 });
 
 // Debts CRUD
@@ -557,16 +646,16 @@ app.delete("/api/wallets/transactions/:id", (req, res) => {
       db.prepare(`
         UPDATE wallets 
         SET balance = balance - ?, 
-            monthly_limit_rem = monthly_limit_rem + ?, 
-            daily_limit_rem = daily_limit_rem + ? 
+            daily_withdraw_limit_rem = daily_withdraw_limit_rem + ?, 
+            monthly_withdraw_limit_rem = monthly_withdraw_limit_rem + ?
         WHERE id = ?
       `).run(txData.amount, txData.amount, txData.amount, txData.wallet_id);
     } else {
       db.prepare(`
         UPDATE wallets 
         SET balance = balance + ?, 
-            monthly_limit_rem = monthly_limit_rem - ?, 
-            daily_limit_rem = daily_limit_rem - ? 
+            daily_deposit_limit_rem = daily_deposit_limit_rem + ?, 
+            monthly_deposit_limit_rem = monthly_deposit_limit_rem + ?
         WHERE id = ?
       `).run(txData.amount, txData.amount, txData.amount, txData.wallet_id);
     }
@@ -589,22 +678,46 @@ app.put("/api/wallets/transactions/:id", (req, res) => {
   const txData: any = db.prepare("SELECT * FROM wallet_transactions WHERE id = ?").get(transactionId);
   if (!txData) return res.status(404).json({ error: "Transaction not found" });
 
+  const wallet: any = db.prepare("SELECT * FROM wallets WHERE id = ?").get(txData.wallet_id);
+  if (!wallet) return res.status(404).json({ error: "Wallet not found" });
+
+  // Validate limits after reversing the old amount
+  if (txData.type === 'withdraw') {
+    const temp_daily = wallet.daily_withdraw_limit_rem + txData.amount;
+    const temp_monthly = wallet.monthly_withdraw_limit_rem + txData.amount;
+    if (amount > temp_daily) {
+      return res.status(400).json({ error: "المبلغ يتجاوز الحد اليومي للسحب المتبقي" });
+    }
+    if (amount > temp_monthly) {
+      return res.status(400).json({ error: "المبلغ يتجاوز الحد الشهري للسحب المتبقي" });
+    }
+  } else {
+    const temp_daily = wallet.daily_deposit_limit_rem + txData.amount;
+    const temp_monthly = wallet.monthly_deposit_limit_rem + txData.amount;
+    if (amount > temp_daily) {
+      return res.status(400).json({ error: "المبلغ يتجاوز الحد اليومي للإيداع المتبقي" });
+    }
+    if (amount > temp_monthly) {
+      return res.status(400).json({ error: "المبلغ يتجاوز الحد الشهري للإيداع المتبقي" });
+    }
+  }
+
   const transaction = db.transaction(() => {
     // 1. Reverse old amount
     if (txData.type === 'withdraw') {
       db.prepare(`
         UPDATE wallets 
         SET balance = balance - ?, 
-            monthly_limit_rem = monthly_limit_rem + ?, 
-            daily_limit_rem = daily_limit_rem + ? 
+            daily_withdraw_limit_rem = daily_withdraw_limit_rem + ?, 
+            monthly_withdraw_limit_rem = monthly_withdraw_limit_rem + ?
         WHERE id = ?
       `).run(txData.amount, txData.amount, txData.amount, txData.wallet_id);
     } else {
       db.prepare(`
         UPDATE wallets 
         SET balance = balance + ?, 
-            monthly_limit_rem = monthly_limit_rem - ?, 
-            daily_limit_rem = daily_limit_rem - ? 
+            daily_deposit_limit_rem = daily_deposit_limit_rem + ?, 
+            monthly_deposit_limit_rem = monthly_deposit_limit_rem + ?
         WHERE id = ?
       `).run(txData.amount, txData.amount, txData.amount, txData.wallet_id);
     }
@@ -614,16 +727,16 @@ app.put("/api/wallets/transactions/:id", (req, res) => {
       db.prepare(`
         UPDATE wallets 
         SET balance = balance + ?, 
-            monthly_limit_rem = monthly_limit_rem - ?, 
-            daily_limit_rem = daily_limit_rem - ? 
+            daily_withdraw_limit_rem = daily_withdraw_limit_rem - ?, 
+            monthly_withdraw_limit_rem = monthly_withdraw_limit_rem - ?
         WHERE id = ?
       `).run(amount, amount, amount, txData.wallet_id);
     } else {
       db.prepare(`
         UPDATE wallets 
         SET balance = balance - ?, 
-            monthly_limit_rem = monthly_limit_rem + ?, 
-            daily_limit_rem = daily_limit_rem + ? 
+            daily_deposit_limit_rem = daily_deposit_limit_rem - ?, 
+            monthly_deposit_limit_rem = monthly_deposit_limit_rem - ?
         WHERE id = ?
       `).run(amount, amount, amount, txData.wallet_id);
     }
@@ -634,8 +747,8 @@ app.put("/api/wallets/transactions/:id", (req, res) => {
   try {
     transaction();
     res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: "Database error" });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Database error" });
   }
 });
 

@@ -214,22 +214,39 @@ export const setupMockServer = () => {
         let wallets = getLocalItem('wallets');
         let txs = getLocalItem('wallet_transactions');
         
+        const wIdx = wallets.findIndex((w:any) => w.id === id);
+        if (wIdx === -1) return errorResponse("Wallet not found");
+
+        const wallet = wallets[wIdx];
+        if (body.type === 'withdraw') {
+            if (body.amount > (wallet.daily_withdraw_limit_rem ?? 10000)) {
+                return errorResponse("المبلغ يتجاوز الحد اليومي للسحب المتبقي");
+            }
+            if (body.amount > (wallet.monthly_withdraw_limit_rem ?? 50000)) {
+                return errorResponse("المبلغ يتجاوز الحد الشهري للسحب المتبقي");
+            }
+        } else {
+            if (body.amount > (wallet.daily_deposit_limit_rem ?? 10000)) {
+                return errorResponse("المبلغ يتجاوز الحد اليومي للإيداع المتبقي");
+            }
+            if (body.amount > (wallet.monthly_deposit_limit_rem ?? 50000)) {
+                return errorResponse("المبلغ يتجاوز الحد الشهري للإيداع المتبقي");
+            }
+        }
+
         const newTx = { wallet_id: id, type: body.type, amount: body.amount, id: nextId(txs), date: new Date().toISOString() };
         setLocalItem('wallet_transactions', [...txs, newTx]);
         
-        const wIdx = wallets.findIndex((w:any) => w.id === id);
-        if(wIdx > -1) {
-            if (body.type === 'withdraw') {
-                wallets[wIdx].balance += body.amount;
-                wallets[wIdx].monthly_limit_rem -= body.amount;
-                wallets[wIdx].daily_limit_rem -= body.amount;
-            } else {
-                wallets[wIdx].balance -= body.amount;
-                wallets[wIdx].monthly_limit_rem += body.amount;
-                wallets[wIdx].daily_limit_rem += body.amount;
-            }
-            setLocalItem('wallets', wallets);
+        if (body.type === 'withdraw') {
+            wallets[wIdx].balance += body.amount;
+            wallets[wIdx].monthly_withdraw_limit_rem = (wallets[wIdx].monthly_withdraw_limit_rem ?? 50000) - body.amount;
+            wallets[wIdx].daily_withdraw_limit_rem = (wallets[wIdx].daily_withdraw_limit_rem ?? 10000) - body.amount;
+        } else {
+            wallets[wIdx].balance -= body.amount;
+            wallets[wIdx].monthly_deposit_limit_rem = (wallets[wIdx].monthly_deposit_limit_rem ?? 50000) - body.amount;
+            wallets[wIdx].daily_deposit_limit_rem = (wallets[wIdx].daily_deposit_limit_rem ?? 10000) - body.amount;
         }
+        setLocalItem('wallets', wallets);
         return jsonResponse({ success: true });
       }
 
@@ -242,16 +259,16 @@ export const setupMockServer = () => {
         if(!tx) return errorResponse("Transaction not found");
         const wIdx = wallets.findIndex((w:any) => w.id === tx.wallet_id);
 
-        if (method === 'DELETE') {
+         if (method === 'DELETE') {
           if (wIdx > -1) {
               if (tx.type === 'withdraw') {
                   wallets[wIdx].balance -= tx.amount;
-                  wallets[wIdx].monthly_limit_rem += tx.amount;
-                  wallets[wIdx].daily_limit_rem += tx.amount;
+                  wallets[wIdx].monthly_withdraw_limit_rem = (wallets[wIdx].monthly_withdraw_limit_rem ?? 50000) + tx.amount;
+                  wallets[wIdx].daily_withdraw_limit_rem = (wallets[wIdx].daily_withdraw_limit_rem ?? 10000) + tx.amount;
               } else {
                   wallets[wIdx].balance += tx.amount;
-                  wallets[wIdx].monthly_limit_rem -= tx.amount;
-                  wallets[wIdx].daily_limit_rem -= tx.amount;
+                  wallets[wIdx].monthly_deposit_limit_rem = (wallets[wIdx].monthly_deposit_limit_rem ?? 50000) + tx.amount;
+                  wallets[wIdx].daily_deposit_limit_rem = (wallets[wIdx].daily_deposit_limit_rem ?? 10000) + tx.amount;
               }
               setLocalItem('wallets', wallets);
           }
@@ -260,26 +277,51 @@ export const setupMockServer = () => {
           return jsonResponse({ success: true });
         }
         
-        if (method === 'PUT') {
+         if (method === 'PUT') {
           const newAmount = body.amount;
           if (wIdx > -1) {
+              const wallet = wallets[wIdx];
+              // Validate limits with temporary limits (reversing the old transaction amount)
+              if (tx.type === 'withdraw') {
+                  const temp_daily = (wallet.daily_withdraw_limit_rem ?? 10000) + tx.amount;
+                  const temp_monthly = (wallet.monthly_withdraw_limit_rem ?? 50000) + tx.amount;
+                  if (newAmount > temp_daily) {
+                      return errorResponse("المبلغ يتجاوز الحد اليومي للسحب المتبقي");
+                  }
+                  if (newAmount > temp_monthly) {
+                      return errorResponse("المبلغ يتجاوز الحد الشهري للسحب المتبقي");
+                  }
+              } else {
+                  const temp_daily = (wallet.daily_deposit_limit_rem ?? 10000) + tx.amount;
+                  const temp_monthly = (wallet.monthly_deposit_limit_rem ?? 50000) + tx.amount;
+                  if (newAmount > temp_daily) {
+                      return errorResponse("المبلغ يتجاوز الحد اليومي للإيداع المتبقي");
+                  }
+                  if (newAmount > temp_monthly) {
+                      return errorResponse("المبلغ يتجاوز الحد الشهري للإيداع المتبقي");
+                  }
+              }
+
+              // 1. Reverse old amount
               if (tx.type === 'withdraw') {
                   wallets[wIdx].balance -= tx.amount;
-                  wallets[wIdx].monthly_limit_rem += tx.amount;
-                  wallets[wIdx].daily_limit_rem += tx.amount;
+                  wallets[wIdx].monthly_withdraw_limit_rem = (wallets[wIdx].monthly_withdraw_limit_rem ?? 50000) + tx.amount;
+                  wallets[wIdx].daily_withdraw_limit_rem = (wallets[wIdx].daily_withdraw_limit_rem ?? 10000) + tx.amount;
               } else {
                   wallets[wIdx].balance += tx.amount;
-                  wallets[wIdx].monthly_limit_rem -= tx.amount;
-                  wallets[wIdx].daily_limit_rem -= tx.amount;
+                  wallets[wIdx].monthly_deposit_limit_rem = (wallets[wIdx].monthly_deposit_limit_rem ?? 50000) + tx.amount;
+                  wallets[wIdx].daily_deposit_limit_rem = (wallets[wIdx].daily_deposit_limit_rem ?? 10000) + tx.amount;
               }
+
+              // 2. Apply new amount
               if (tx.type === 'withdraw') {
                   wallets[wIdx].balance += newAmount;
-                  wallets[wIdx].monthly_limit_rem -= newAmount;
-                  wallets[wIdx].daily_limit_rem -= newAmount;
+                  wallets[wIdx].monthly_withdraw_limit_rem = (wallets[wIdx].monthly_withdraw_limit_rem ?? 50000) - newAmount;
+                  wallets[wIdx].daily_withdraw_limit_rem = (wallets[wIdx].daily_withdraw_limit_rem ?? 10000) - newAmount;
               } else {
                   wallets[wIdx].balance -= newAmount;
-                  wallets[wIdx].monthly_limit_rem += newAmount;
-                  wallets[wIdx].daily_limit_rem += newAmount;
+                  wallets[wIdx].monthly_deposit_limit_rem = (wallets[wIdx].monthly_deposit_limit_rem ?? 50000) - newAmount;
+                  wallets[wIdx].daily_deposit_limit_rem = (wallets[wIdx].daily_deposit_limit_rem ?? 10000) - newAmount;
               }
               setLocalItem('wallets', wallets);
           }

@@ -395,7 +395,7 @@ const Wallets = () => {
   const { t } = useTranslation();
   const { user } = useAppContext();
   const [wallets, setWallets] = useState<any[]>([]);
-  const [newWallet, setNewWallet] = useState({ name: '', number: '', monthly_limit: 50000, daily_limit: 10000, balance: 0 });
+  const [newWallet, setNewWallet] = useState({ name: '', number: '', monthly_withdraw_limit: 50000, monthly_deposit_limit: 50000, daily_withdraw_limit: 10000, daily_deposit_limit: 10000, balance: 0 });
   const [showAddForm, setShowAddForm] = useState(false);
   const [activeView, setActiveView] = useState<'manage' | 'operations'>('operations');
   const [editingWallet, setEditingWallet] = useState<any | null>(null);
@@ -418,8 +418,15 @@ const Wallets = () => {
     });
     if (res.ok) {
       const data = await res.json();
-      setWallets([...wallets, { ...newWallet, id: data.id, monthly_limit_rem: newWallet.monthly_limit, daily_limit_rem: newWallet.daily_limit }]);
-      setNewWallet({ name: '', number: '', monthly_limit: 50000, daily_limit: 10000, balance: 0 });
+      setWallets([...wallets, { 
+        ...newWallet, 
+        id: data.id, 
+        monthly_withdraw_limit_rem: newWallet.monthly_withdraw_limit, 
+        monthly_deposit_limit_rem: newWallet.monthly_deposit_limit, 
+        daily_withdraw_limit_rem: newWallet.daily_withdraw_limit, 
+        daily_deposit_limit_rem: newWallet.daily_deposit_limit 
+      }]);
+      setNewWallet({ name: '', number: '', monthly_withdraw_limit: 50000, monthly_deposit_limit: 50000, daily_withdraw_limit: 10000, daily_deposit_limit: 10000, balance: 0 });
       setShowAddForm(false);
     } else {
       const data = await res.json();
@@ -434,11 +441,17 @@ const Wallets = () => {
     const updatedWallet = { ...editingWallet };
     
     if (originalWallet) {
-      if (editingWallet.monthly_limit !== originalWallet.monthly_limit) {
-        updatedWallet.monthly_limit_rem = editingWallet.monthly_limit;
+      if (editingWallet.monthly_withdraw_limit !== originalWallet.monthly_withdraw_limit) {
+        updatedWallet.monthly_withdraw_limit_rem = editingWallet.monthly_withdraw_limit;
       }
-      if (editingWallet.daily_limit !== originalWallet.daily_limit) {
-        updatedWallet.daily_limit_rem = editingWallet.daily_limit;
+      if (editingWallet.monthly_deposit_limit !== originalWallet.monthly_deposit_limit) {
+        updatedWallet.monthly_deposit_limit_rem = editingWallet.monthly_deposit_limit;
+      }
+      if (editingWallet.daily_withdraw_limit !== originalWallet.daily_withdraw_limit) {
+        updatedWallet.daily_withdraw_limit_rem = editingWallet.daily_withdraw_limit;
+      }
+      if (editingWallet.daily_deposit_limit !== originalWallet.daily_deposit_limit) {
+        updatedWallet.daily_deposit_limit_rem = editingWallet.daily_deposit_limit;
       }
     }
 
@@ -496,6 +509,29 @@ const Wallets = () => {
       setNotification({ message: "يرجى إدخال مبلغ صحيح", type: 'error' });
       return;
     }
+
+    const wallet = wallets.find(w => w.id === id);
+    if (wallet) {
+      if (type === 'withdraw') {
+        if (amount > (wallet.daily_withdraw_limit_rem ?? 10000)) {
+          setNotification({ message: "المبلغ يتجاوز الحد اليومي للسحب المتبقي", type: 'error' });
+          return;
+        }
+        if (amount > (wallet.monthly_withdraw_limit_rem ?? 50000)) {
+          setNotification({ message: "المبلغ يتجاوز الحد الشهري للسحب المتبقي", type: 'error' });
+          return;
+        }
+      } else {
+        if (amount > (wallet.daily_deposit_limit_rem ?? 10000)) {
+          setNotification({ message: "المبلغ يتجاوز الحد اليومي للإيداع المتبقي", type: 'error' });
+          return;
+        }
+        if (amount > (wallet.monthly_deposit_limit_rem ?? 50000)) {
+          setNotification({ message: "المبلغ يتجاوز الحد الشهري للإيداع المتبقي", type: 'error' });
+          return;
+        }
+      }
+    }
     
     const res = await fetch(`/api/wallets/${id}/transaction`, {
       method: 'POST',
@@ -510,15 +546,15 @@ const Wallets = () => {
             return { 
               ...w, 
               balance: w.balance + amount,
-              monthly_limit_rem: w.monthly_limit_rem - amount,
-              daily_limit_rem: w.daily_limit_rem - amount
+              daily_withdraw_limit_rem: (w.daily_withdraw_limit_rem ?? 10000) - amount,
+              monthly_withdraw_limit_rem: (w.monthly_withdraw_limit_rem ?? 50000) - amount
             };
           } else {
             return { 
               ...w, 
               balance: w.balance - amount,
-              monthly_limit_rem: w.monthly_limit_rem + amount,
-              daily_limit_rem: w.daily_limit_rem + amount
+              daily_deposit_limit_rem: (w.daily_deposit_limit_rem ?? 10000) - amount,
+              monthly_deposit_limit_rem: (w.monthly_deposit_limit_rem ?? 50000) - amount
             };
           }
         }
@@ -597,7 +633,7 @@ const Wallets = () => {
           {showAddForm && (
             <GlassCard className="border-2 border-green-500/30">
               <h3 className="text-lg font-bold mb-4">بيانات المحفظة الجديدة</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-7 gap-4">
                 <div className="space-y-1">
                   <label className="text-xs ml-2 opacity-60">{t('wallet_name')}</label>
                   <input placeholder="مثال: فودافون كاش 1" className="glass-input w-full" value={newWallet.name} onChange={e => setNewWallet({...newWallet, name: e.target.value})} />
@@ -607,12 +643,20 @@ const Wallets = () => {
                   <input placeholder="01xxxxxxxxx" className="glass-input w-full" value={newWallet.number} onChange={e => setNewWallet({...newWallet, number: e.target.value})} />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs ml-2 opacity-60">{t('monthly_limit')}</label>
-                  <input type="number" className="glass-input w-full" value={newWallet.monthly_limit} onChange={e => setNewWallet({...newWallet, monthly_limit: Number(e.target.value)})} />
+                  <label className="text-xs ml-2 opacity-60">الحد اليومي للسحب</label>
+                  <input type="number" className="glass-input w-full" value={newWallet.daily_withdraw_limit} onChange={e => setNewWallet({...newWallet, daily_withdraw_limit: Number(e.target.value)})} />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs ml-2 opacity-60">{t('daily_limit')}</label>
-                  <input type="number" className="glass-input w-full" value={newWallet.daily_limit} onChange={e => setNewWallet({...newWallet, daily_limit: Number(e.target.value)})} />
+                  <label className="text-xs ml-2 opacity-60">الحد اليومي للإيداع</label>
+                  <input type="number" className="glass-input w-full" value={newWallet.daily_deposit_limit} onChange={e => setNewWallet({...newWallet, daily_deposit_limit: Number(e.target.value)})} />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs ml-2 opacity-60">الحد الشهري للسحب</label>
+                  <input type="number" className="glass-input w-full" value={newWallet.monthly_withdraw_limit} onChange={e => setNewWallet({...newWallet, monthly_withdraw_limit: Number(e.target.value)})} />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs ml-2 opacity-60">الحد الشهري للإيداع</label>
+                  <input type="number" className="glass-input w-full" value={newWallet.monthly_deposit_limit} onChange={e => setNewWallet({...newWallet, monthly_deposit_limit: Number(e.target.value)})} />
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs ml-2 opacity-60">{t('balance')}</label>
@@ -696,24 +740,50 @@ const Wallets = () => {
                 </button>
               </div>
               
-              <div className="space-y-2 mb-6">
-                <div className="flex justify-between text-xs opacity-70">
-                  <span>الليميت الشهري:</span>
-                  <span>{wallet.monthly_limit}</span>
+              <div className="space-y-2 mb-6 text-right">
+                {/* Withdrawal limits */}
+                <div className="border-b border-white/10 pb-2 mb-2">
+                  <span className="text-xs font-bold text-green-700 block mb-1">حدود السحب (Cash Out):</span>
+                  <div className="flex justify-between text-xs opacity-70">
+                    <span>الليميت اليومي:</span>
+                    <span>{wallet.daily_withdraw_limit}</span>
+                  </div>
+                  <div className="flex justify-between text-sm font-bold text-green-600">
+                    <span>المتبقي اليومي:</span>
+                    <span>{wallet.daily_withdraw_limit_rem}</span>
+                  </div>
+                  <div className="flex justify-between text-xs opacity-70 mt-1">
+                    <span>الليميت الشهري:</span>
+                    <span>{wallet.monthly_withdraw_limit}</span>
+                  </div>
+                  <div className="flex justify-between text-sm font-bold text-green-700">
+                    <span>المتبقي الشهري:</span>
+                    <span>{wallet.monthly_withdraw_limit_rem}</span>
+                  </div>
                 </div>
-                <div className="flex justify-between text-sm font-bold text-blue-600">
-                  <span>المتبقي الشهري:</span>
-                  <span>{wallet.monthly_limit_rem}</span>
+
+                {/* Deposit limits */}
+                <div className="pb-2">
+                  <span className="text-xs font-bold text-red-700 block mb-1">حدود الإيداع (Cash In):</span>
+                  <div className="flex justify-between text-xs opacity-70">
+                    <span>الليميت اليومي:</span>
+                    <span>{wallet.daily_deposit_limit}</span>
+                  </div>
+                  <div className="flex justify-between text-sm font-bold text-red-600">
+                    <span>المتبقي اليومي:</span>
+                    <span>{wallet.daily_deposit_limit_rem}</span>
+                  </div>
+                  <div className="flex justify-between text-xs opacity-70 mt-1">
+                    <span>الليميت الشهري:</span>
+                    <span>{wallet.monthly_deposit_limit}</span>
+                  </div>
+                  <div className="flex justify-between text-sm font-bold text-red-700">
+                    <span>المتبقي الشهري:</span>
+                    <span>{wallet.monthly_deposit_limit_rem}</span>
+                  </div>
                 </div>
-                <div className="flex justify-between text-xs opacity-70 mt-2">
-                  <span>الليميت اليومي:</span>
-                  <span>{wallet.daily_limit}</span>
-                </div>
-                <div className="flex justify-between text-sm font-bold text-cyan-600">
-                  <span>المتبقي اليومي:</span>
-                  <span>{wallet.daily_limit_rem}</span>
-                </div>
-                <div className="flex justify-between text-lg font-bold border-t border-white/20 pt-2 mt-4">
+
+                <div className="flex justify-between text-lg font-bold border-t border-white/20 pt-2 mt-2">
                   <span>{t('balance')}:</span>
                   <span className="text-slate-800">{wallet.balance}</span>
                 </div>
@@ -772,22 +842,42 @@ const Wallets = () => {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1">
-                    <label className="text-xs ml-2 opacity-60">{t('monthly_limit')}</label>
-                    <input type="number" className="glass-input w-full" value={editingWallet.monthly_limit} onChange={e => setEditingWallet({...editingWallet, monthly_limit: Number(e.target.value)})} />
+                    <label className="text-xs ml-2 opacity-60">الحد اليومي للسحب</label>
+                    <input type="number" className="glass-input w-full" value={editingWallet.daily_withdraw_limit} onChange={e => setEditingWallet({...editingWallet, daily_withdraw_limit: Number(e.target.value)})} />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs ml-2 opacity-60">{t('monthly_limit_rem')}</label>
-                    <input type="number" className="glass-input w-full" value={editingWallet.monthly_limit_rem} onChange={e => setEditingWallet({...editingWallet, monthly_limit_rem: Number(e.target.value)})} />
+                    <label className="text-xs ml-2 opacity-60">المتبقي اليومي للسحب</label>
+                    <input type="number" className="glass-input w-full" value={editingWallet.daily_withdraw_limit_rem} onChange={e => setEditingWallet({...editingWallet, daily_withdraw_limit_rem: Number(e.target.value)})} />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1">
-                    <label className="text-xs ml-2 opacity-60">{t('daily_limit')}</label>
-                    <input type="number" className="glass-input w-full" value={editingWallet.daily_limit} onChange={e => setEditingWallet({...editingWallet, daily_limit: Number(e.target.value)})} />
+                    <label className="text-xs ml-2 opacity-60">الحد اليومي للإيداع</label>
+                    <input type="number" className="glass-input w-full" value={editingWallet.daily_deposit_limit} onChange={e => setEditingWallet({...editingWallet, daily_deposit_limit: Number(e.target.value)})} />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs ml-2 opacity-60">{t('daily_limit_rem')}</label>
-                    <input type="number" className="glass-input w-full" value={editingWallet.daily_limit_rem} onChange={e => setEditingWallet({...editingWallet, daily_limit_rem: Number(e.target.value)})} />
+                    <label className="text-xs ml-2 opacity-60">المتبقي اليومي للإيداع</label>
+                    <input type="number" className="glass-input w-full" value={editingWallet.daily_deposit_limit_rem} onChange={e => setEditingWallet({...editingWallet, daily_deposit_limit_rem: Number(e.target.value)})} />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-xs ml-2 opacity-60">الحد الشهري للسحب</label>
+                    <input type="number" className="glass-input w-full" value={editingWallet.monthly_withdraw_limit} onChange={e => setEditingWallet({...editingWallet, monthly_withdraw_limit: Number(e.target.value)})} />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs ml-2 opacity-60">المتبقي الشهري للسحب</label>
+                    <input type="number" className="glass-input w-full" value={editingWallet.monthly_withdraw_limit_rem} onChange={e => setEditingWallet({...editingWallet, monthly_withdraw_limit_rem: Number(e.target.value)})} />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-xs ml-2 opacity-60">الحد الشهري للإيداع</label>
+                    <input type="number" className="glass-input w-full" value={editingWallet.monthly_deposit_limit} onChange={e => setEditingWallet({...editingWallet, monthly_deposit_limit: Number(e.target.value)})} />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs ml-2 opacity-60">المتبقي الشهري للإيداع</label>
+                    <input type="number" className="glass-input w-full" value={editingWallet.monthly_deposit_limit_rem} onChange={e => setEditingWallet({...editingWallet, monthly_deposit_limit_rem: Number(e.target.value)})} />
                   </div>
                 </div>
                 <div className="space-y-1">
