@@ -27,7 +27,9 @@ import {
   UserPlus,
   Coins,
   TrendingUp,
-  History
+  History,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { AppProvider, useAppContext } from './contexts/AppContext';
 import './i18n';
@@ -134,6 +136,24 @@ const Dashboard = () => {
   const [editingLog, setEditingLog] = useState<any | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
   const [notification, setNotification] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+
+  const defaultMachineNames: Record<string, string> = {
+    fawry: 'فوري', neopay: 'نيوباي', superpay: 'سوبرباي',
+    new_machine1: 'ماكينة 1', new_machine2: 'ماكينة 2'
+  };
+  const loadMachineNames = () => {
+    try { return { ...defaultMachineNames, ...JSON.parse(localStorage.getItem('machine_names') || '{}') }; }
+    catch { return defaultMachineNames; }
+  };
+  const [machineNames, setMachineNames] = useState<Record<string, string>>(loadMachineNames);
+  const [editingMachineName, setEditingMachineName] = useState<string | null>(null);
+
+  const saveMachineName = (key: string, name: string) => {
+    const updated = { ...machineNames, [key]: name };
+    setMachineNames(updated);
+    localStorage.setItem('machine_names', JSON.stringify(updated));
+    setEditingMachineName(null);
+  };
 
   useEffect(() => {
     fetch('/api/wallets').then(res => res.json()).then(setWallets);
@@ -260,15 +280,33 @@ const Dashboard = () => {
             <BarChart3 className="text-cyan-500" /> {t('machines')}
           </h2>
           <div className="space-y-3">
-            {[
-              { key: 'fawry', label: t('fawry') },
-              { key: 'neopay', label: t('neopay') },
-              { key: 'superpay', label: t('superpay') },
-              { key: 'new_machine1', label: t('machine1') },
-              { key: 'new_machine2', label: t('machine2') }
-            ].map(({ key, label }) => (
-              <div key={key} className="flex items-center justify-between">
-                <label className="text-sm font-bold">{label}</label>
+            {(['fawry', 'neopay', 'superpay', 'new_machine1', 'new_machine2'] as const).map(key => (
+              <div key={key} className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1 min-w-0">
+                  {editingMachineName === key ? (
+                    <input
+                      autoFocus
+                      className="glass-input text-sm font-bold w-28"
+                      defaultValue={machineNames[key]}
+                      onBlur={e => saveMachineName(key, e.target.value || defaultMachineNames[key])}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                        if (e.key === 'Escape') setEditingMachineName(null);
+                      }}
+                    />
+                  ) : (
+                    <>
+                      <label className="text-sm font-bold">{machineNames[key]}</label>
+                      <button
+                        onClick={() => setEditingMachineName(key)}
+                        className="text-slate-400 hover:text-blue-500 transition-colors p-0.5 rounded"
+                        title="تغيير الاسم"
+                      >
+                        <Edit size={13} />
+                      </button>
+                    </>
+                  )}
+                </div>
                 <input 
                   type="number" 
                   className="glass-input w-32 text-center" 
@@ -352,15 +390,9 @@ const Dashboard = () => {
                 </div>
                 <div className="space-y-3">
                   <h3 className="font-bold border-b pb-2">{t('machines')}</h3>
-                  {[
-                    { key: 'fawry', label: t('fawry') },
-                    { key: 'neopay', label: t('neopay') },
-                    { key: 'superpay', label: t('superpay') },
-                    { key: 'new_machine1', label: t('machine1') },
-                    { key: 'new_machine2', label: t('machine2') }
-                  ].map(({ key, label }) => (
+                  {(['fawry', 'neopay', 'superpay', 'new_machine1', 'new_machine2'] as const).map(key => (
                     <div key={key} className="flex items-center justify-between">
-                      <label className="text-sm font-bold">{label}</label>
+                      <label className="text-sm font-bold">{machineNames[key]}</label>
                       <input 
                         type="number" 
                         className="glass-input w-32 text-center" 
@@ -514,10 +546,6 @@ const Wallets = () => {
     const wallet = wallets.find(w => w.id === id);
     if (wallet) {
       if (type === 'withdraw') {
-        if (amount > (wallet.balance ?? 0)) {
-          setNotification({ message: "المبلغ المراد سحبه أكبر من رصيد المحفظة", type: 'error' });
-          return;
-        }
         if (amount > (wallet.daily_withdraw_limit_rem ?? 10000)) {
           setNotification({ message: "المبلغ يتجاوز الحد اليومي للسحب المتبقي", type: 'error' });
           return;
@@ -527,6 +555,10 @@ const Wallets = () => {
           return;
         }
       } else {
+        if (amount > (wallet.balance ?? 0)) {
+          setNotification({ message: "المبلغ المراد إيداعه أكبر من رصيد المحفظة", type: 'error' });
+          return;
+        }
         if (amount > (wallet.daily_deposit_limit_rem ?? 10000)) {
           setNotification({ message: "المبلغ يتجاوز الحد اليومي للإيداع المتبقي", type: 'error' });
           return;
@@ -550,14 +582,14 @@ const Wallets = () => {
           if (type === 'withdraw') {
             return { 
               ...w, 
-              balance: w.balance - amount,
+              balance: w.balance + amount,
               daily_withdraw_limit_rem: (w.daily_withdraw_limit_rem ?? 10000) - amount,
               monthly_withdraw_limit_rem: (w.monthly_withdraw_limit_rem ?? 50000) - amount
             };
           } else {
             return { 
               ...w, 
-              balance: w.balance + amount,
+              balance: w.balance - amount,
               daily_deposit_limit_rem: (w.daily_deposit_limit_rem ?? 10000) - amount,
               monthly_deposit_limit_rem: (w.monthly_deposit_limit_rem ?? 50000) - amount
             };
@@ -749,17 +781,9 @@ const Wallets = () => {
                 {/* Withdrawal limits */}
                 <div className="border-b border-white/10 pb-2 mb-2">
                   <span className="text-xs font-bold text-green-700 block mb-1">حدود السحب (Cash Out):</span>
-                  <div className="flex justify-between text-xs opacity-70">
-                    <span>الليميت اليومي:</span>
-                    <span>{wallet.daily_withdraw_limit}</span>
-                  </div>
                   <div className="flex justify-between text-sm font-bold text-green-600">
                     <span>المتبقي اليومي:</span>
                     <span>{wallet.daily_withdraw_limit_rem}</span>
-                  </div>
-                  <div className="flex justify-between text-xs opacity-70 mt-1">
-                    <span>الليميت الشهري:</span>
-                    <span>{wallet.monthly_withdraw_limit}</span>
                   </div>
                   <div className="flex justify-between text-sm font-bold text-green-700">
                     <span>المتبقي الشهري:</span>
@@ -770,17 +794,9 @@ const Wallets = () => {
                 {/* Deposit limits */}
                 <div className="pb-2">
                   <span className="text-xs font-bold text-red-700 block mb-1">حدود الإيداع (Cash In):</span>
-                  <div className="flex justify-between text-xs opacity-70">
-                    <span>الليميت اليومي:</span>
-                    <span>{wallet.daily_deposit_limit}</span>
-                  </div>
                   <div className="flex justify-between text-sm font-bold text-red-600">
                     <span>المتبقي اليومي:</span>
                     <span>{wallet.daily_deposit_limit_rem}</span>
-                  </div>
-                  <div className="flex justify-between text-xs opacity-70 mt-1">
-                    <span>الليميت الشهري:</span>
-                    <span>{wallet.monthly_deposit_limit}</span>
                   </div>
                   <div className="flex justify-between text-sm font-bold text-red-700">
                     <span>المتبقي الشهري:</span>
@@ -1665,8 +1681,16 @@ const Debts = () => {
   const filteredDebts = debts.filter(debt => {
     if (!debt.date) return true;
     const debtDate = new Date(debt.date).toISOString().split('T')[0];
-    if (fromDate && debtDate < fromDate) return false;
+    
+    // Hide debt if created AFTER the filter end date
     if (toDate && debtDate > toDate) return false;
+    
+    // For debts created BEFORE the filter start date: only show if still unpaid (net != 0)
+    if (fromDate && debtDate < fromDate) {
+      const net = (debt.amount_out || 0) - (debt.amount_in || 0);
+      return net !== 0;
+    }
+    
     return true;
   });
 
@@ -1704,7 +1728,8 @@ const Debts = () => {
     const updated = {
       ...debt,
       amount_in: (debt.amount_in || 0) + (delta.amount_in || 0),
-      amount_out: (debt.amount_out || 0) + (delta.amount_out || 0)
+      amount_out: (debt.amount_out || 0) + (delta.amount_out || 0),
+      date: new Date().toISOString()
     };
     const res = await fetch(`/api/debts/${debt.id}`, {
       method: 'PUT',
@@ -1784,6 +1809,7 @@ const Debts = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredDebts.map(debt => (
           <GlassCard key={debt.id} className="space-y-4">
+            {/* Header: name + actions */}
             <div className="flex justify-between items-start">
               <h3 className="text-xl font-bold">{debt.person_name}</h3>
               <div className="flex gap-1">
@@ -1797,6 +1823,18 @@ const Debts = () => {
                 )}
               </div>
             </div>
+
+            {/* Total net - prominent box at top */}
+            {(() => {
+              const net = (debt.amount_out || 0) - (debt.amount_in || 0);
+              const isDebt = net > 0;
+              return (
+                <div className={`rounded-2xl py-4 px-5 text-center ${isDebt ? 'bg-red-500/15 border border-red-400/30' : 'bg-green-500/15 border border-green-400/30'}`}>
+                  <p className="text-xs font-bold opacity-60 mb-1">{t('total_debt')}</p>
+                  <p className={`text-4xl font-black tracking-tight ${isDebt ? 'text-red-600' : 'text-green-600'}`}>{net}</p>
+                </div>
+              );
+            })()}
 
             {/* Running totals display */}
             <div className="grid grid-cols-2 gap-3">
@@ -1838,13 +1876,7 @@ const Debts = () => {
               </div>
             </div>
 
-            <div className="pt-3 border-t border-white/20 flex justify-between items-center gap-3">
-              <div>
-                <span className="text-xs opacity-60 block">{t('total_debt')}</span>
-                <span className={`text-2xl font-black ${(debt.amount_out || 0) - (debt.amount_in || 0) > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                  {(debt.amount_out || 0) - (debt.amount_in || 0)}
-                </span>
-              </div>
+            <div className="flex justify-end">
               <NeumorphicButton
                 onClick={() => handleSaveAdjustment(debt)}
                 className="bg-blue-500 text-white flex items-center gap-2 px-4 py-2"
@@ -2435,6 +2467,7 @@ const Login = ({ onLogin }: any) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -2470,13 +2503,23 @@ const Login = ({ onLogin }: any) => {
             </div>
             <div>
               <label className="block text-sm font-bold mb-2 ml-2">{t('password')}</label>
-              <input 
-                type="password" 
-                className="glass-input w-full" 
-                value={password} 
-                onChange={e => setPassword(e.target.value)} 
-                required
-              />
+              <div className="relative">
+                <input 
+                  type={showPassword ? 'text' : 'password'}
+                  className="glass-input w-full pr-12" 
+                  value={password} 
+                  onChange={e => setPassword(e.target.value)} 
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(v => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700 transition-colors p-1"
+                  tabIndex={-1}
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
             </div>
             {error && <p className="text-red-500 text-sm text-center">{error}</p>}
             <NeumorphicButton type="submit" className="w-full bg-blue-500 text-white font-bold py-4">

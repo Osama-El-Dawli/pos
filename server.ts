@@ -511,9 +511,6 @@ app.post("/api/wallets/:id/transaction", (req, res) => {
   }
 
   if (type === 'withdraw') {
-    if (amount > wallet.balance) {
-      return res.status(400).json({ error: "المبلغ المراد سحبه أكبر من رصيد المحفظة" });
-    }
     if (amount > wallet.daily_withdraw_limit_rem) {
       return res.status(400).json({ error: "المبلغ يتجاوز الحد اليومي للسحب المتبقي" });
     }
@@ -521,6 +518,9 @@ app.post("/api/wallets/:id/transaction", (req, res) => {
       return res.status(400).json({ error: "المبلغ يتجاوز الحد الشهري للسحب المتبقي" });
     }
   } else {
+    if (amount > wallet.balance) {
+      return res.status(400).json({ error: "المبلغ المراد إيداعه أكبر من رصيد المحفظة" });
+    }
     if (amount > wallet.daily_deposit_limit_rem) {
       return res.status(400).json({ error: "المبلغ يتجاوز الحد اليومي للإيداع المتبقي" });
     }
@@ -536,7 +536,7 @@ app.post("/api/wallets/:id/transaction", (req, res) => {
     if (type === 'withdraw') {
       db.prepare(`
         UPDATE wallets 
-        SET balance = balance - ?, 
+        SET balance = balance + ?, 
             monthly_withdraw_limit_rem = monthly_withdraw_limit_rem - ?, 
             daily_withdraw_limit_rem = daily_withdraw_limit_rem - ? 
         WHERE id = ?
@@ -544,7 +544,7 @@ app.post("/api/wallets/:id/transaction", (req, res) => {
     } else {
       db.prepare(`
         UPDATE wallets 
-        SET balance = balance + ?, 
+        SET balance = balance - ?, 
             monthly_deposit_limit_rem = monthly_deposit_limit_rem - ?, 
             daily_deposit_limit_rem = daily_deposit_limit_rem - ? 
         WHERE id = ?
@@ -614,7 +614,7 @@ app.put("/api/debts/:id", (req, res) => {
     const oldDebt: any = db.prepare("SELECT * FROM debts WHERE id = ?").get(id);
     if (!oldDebt) throw new Error("Debt record not found");
 
-    db.prepare("UPDATE debts SET amount_in = ?, amount_out = ? WHERE id = ?")
+    db.prepare("UPDATE debts SET amount_in = ?, amount_out = ?, date = CURRENT_TIMESTAMP WHERE id = ?")
       .run(amount_in || 0, amount_out || 0, id);
     
     const diff_out = (amount_out || 0) - (oldDebt.amount_out || 0);
@@ -746,7 +746,7 @@ app.delete("/api/wallets/transactions/:id", (req, res) => {
     if (txData.type === 'withdraw') {
       db.prepare(`
         UPDATE wallets 
-        SET balance = balance + ?, 
+        SET balance = balance - ?, 
             daily_withdraw_limit_rem = daily_withdraw_limit_rem + ?, 
             monthly_withdraw_limit_rem = monthly_withdraw_limit_rem + ?
         WHERE id = ?
@@ -754,7 +754,7 @@ app.delete("/api/wallets/transactions/:id", (req, res) => {
     } else {
       db.prepare(`
         UPDATE wallets 
-        SET balance = balance - ?, 
+        SET balance = balance + ?, 
             daily_deposit_limit_rem = daily_deposit_limit_rem + ?, 
             monthly_deposit_limit_rem = monthly_deposit_limit_rem + ?
         WHERE id = ?
@@ -784,10 +784,6 @@ app.put("/api/wallets/transactions/:id", (req, res) => {
 
   // Validate limits and balance after reversing the old amount
   if (txData.type === 'withdraw') {
-    const temp_balance = wallet.balance + txData.amount;
-    if (amount > temp_balance) {
-      return res.status(400).json({ error: "المبلغ المراد سحبه أكبر من رصيد المحفظة" });
-    }
     const temp_daily = wallet.daily_withdraw_limit_rem + txData.amount;
     const temp_monthly = wallet.monthly_withdraw_limit_rem + txData.amount;
     if (amount > temp_daily) {
@@ -797,6 +793,10 @@ app.put("/api/wallets/transactions/:id", (req, res) => {
       return res.status(400).json({ error: "المبلغ يتجاوز الحد الشهري للسحب المتبقي" });
     }
   } else {
+    const temp_balance = wallet.balance + txData.amount;
+    if (amount > temp_balance) {
+      return res.status(400).json({ error: "المبلغ المراد إيداعه أكبر من رصيد المحفظة" });
+    }
     const temp_daily = wallet.daily_deposit_limit_rem + txData.amount;
     const temp_monthly = wallet.monthly_deposit_limit_rem + txData.amount;
     if (amount > temp_daily) {
@@ -812,7 +812,7 @@ app.put("/api/wallets/transactions/:id", (req, res) => {
     if (txData.type === 'withdraw') {
       db.prepare(`
         UPDATE wallets 
-        SET balance = balance + ?, 
+        SET balance = balance - ?, 
             daily_withdraw_limit_rem = daily_withdraw_limit_rem + ?, 
             monthly_withdraw_limit_rem = monthly_withdraw_limit_rem + ?
         WHERE id = ?
@@ -820,7 +820,7 @@ app.put("/api/wallets/transactions/:id", (req, res) => {
     } else {
       db.prepare(`
         UPDATE wallets 
-        SET balance = balance - ?, 
+        SET balance = balance + ?, 
             daily_deposit_limit_rem = daily_deposit_limit_rem + ?, 
             monthly_deposit_limit_rem = monthly_deposit_limit_rem + ?
         WHERE id = ?
@@ -831,7 +831,7 @@ app.put("/api/wallets/transactions/:id", (req, res) => {
     if (txData.type === 'withdraw') {
       db.prepare(`
         UPDATE wallets 
-        SET balance = balance - ?, 
+        SET balance = balance + ?, 
             daily_withdraw_limit_rem = daily_withdraw_limit_rem - ?, 
             monthly_withdraw_limit_rem = monthly_withdraw_limit_rem - ?
         WHERE id = ?
@@ -839,7 +839,7 @@ app.put("/api/wallets/transactions/:id", (req, res) => {
     } else {
       db.prepare(`
         UPDATE wallets 
-        SET balance = balance + ?, 
+        SET balance = balance - ?, 
             daily_deposit_limit_rem = daily_deposit_limit_rem - ?, 
             monthly_deposit_limit_rem = monthly_deposit_limit_rem - ?
         WHERE id = ?
