@@ -870,7 +870,7 @@ app.get("/api/reports/summary", (req, res) => {
 
   const sales = db.prepare("SELECT SUM(total_price) as total FROM sales WHERE date(date) >= date(?) AND date(date) <= date(?)").get(startDate, endDate);
   const expenses = db.prepare("SELECT SUM(amount) as total FROM expenses WHERE date(date) >= date(?) AND date(date) <= date(?)").get(startDate, endDate);
-  const debts = db.prepare("SELECT SUM(amount_out - amount_in) as total FROM debts WHERE date(date) >= date(?) AND date(date) <= date(?)").get(startDate, endDate);
+  const debts = db.prepare("SELECT SUM(amount_out - amount_in) as total FROM debts WHERE date(date) <= date(?)").get(endDate);
   
   // Latest treasury log at or before the endDate of the range
   const treasury = db.prepare("SELECT * FROM treasury_log WHERE date(date) <= date(?) ORDER BY date DESC LIMIT 1").get(endDate) || {};

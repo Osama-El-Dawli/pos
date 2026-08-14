@@ -572,7 +572,11 @@ export const setupMockServer = () => {
 
         const sales = getLocalItem('sales').filter((s:any) => isWithin(s.date));
         const expenses = getLocalItem('expenses').filter((e:any) => isWithin(e.date));
-        const debts = getLocalItem('debts').filter((d:any) => isWithin(d.date));
+        const debts = getLocalItem('debts').filter((d:any) => {
+          if (!d.date) return true;
+          const dStr = d.date.split(' ')[0].split('T')[0];
+          return dStr <= endDate;
+        });
         
         // Latest treasury log at or before the endDate
         const treasury = getLocalItem('treasury_log')

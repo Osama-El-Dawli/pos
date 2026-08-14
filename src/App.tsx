@@ -2466,13 +2466,26 @@ const Login = ({ onLogin }: any) => {
   const { t } = useTranslation();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(true);
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    try {
+      const res = await fetch('/api/users');
+      if (res.ok) {
+        const users = await res.json();
+        const found = users.find((u: any) => u.username === username && u.password === password);
+        if (found) {
+          onLogin(found, rememberMe);
+          return;
+        }
+      }
+    } catch {}
+
     if (username === 'admin' && password === 'password') {
-      onLogin({ id: 1, username: 'admin', role: 'admin' });
+      onLogin({ id: 1, username: 'admin', role: 'admin' }, rememberMe);
     } else {
       setError('اسم المستخدم أو كلمة المرور غير صحيحة');
     }
@@ -2521,6 +2534,20 @@ const Login = ({ onLogin }: any) => {
                 </button>
               </div>
             </div>
+
+            <div className="flex items-center gap-2 px-1">
+              <input 
+                type="checkbox" 
+                id="rememberMe"
+                checked={rememberMe} 
+                onChange={e => setRememberMe(e.target.checked)} 
+                className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+              />
+              <label htmlFor="rememberMe" className="text-sm font-bold opacity-80 cursor-pointer select-none">
+                {t('remember_me')}
+              </label>
+            </div>
+
             {error && <p className="text-red-500 text-sm text-center">{error}</p>}
             <NeumorphicButton type="submit" className="w-full bg-blue-500 text-white font-bold py-4">
               {t('login')}

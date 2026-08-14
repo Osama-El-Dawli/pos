@@ -166,7 +166,8 @@ const resources = {
       "invalid_quantity": "يرجى إدخال كمية صحيحة",
       "enter_quantity": "أدخل الكمية المباعة",
       "edit_transaction": "تعديل العملية",
-      "delete_transaction": "حذف العملية"
+      "delete_transaction": "حذف العملية",
+      "remember_me": "تذكرني"
     }
   }
 }
