@@ -428,7 +428,7 @@ const Wallets = () => {
   const { t } = useTranslation();
   const { user } = useAppContext();
   const [wallets, setWallets] = useState<any[]>([]);
-  const [newWallet, setNewWallet] = useState({ name: '', number: '', monthly_withdraw_limit: 50000, monthly_deposit_limit: 50000, daily_withdraw_limit: 10000, daily_deposit_limit: 10000, balance: 0 });
+  const [newWallet, setNewWallet] = useState({ name: '', number: '', monthly_withdraw_limit: 200000, monthly_deposit_limit: 200000, daily_withdraw_limit: 60000, daily_deposit_limit: 60000, balance: 0 });
   const [showAddForm, setShowAddForm] = useState(false);
   const [activeView, setActiveView] = useState<'manage' | 'operations'>('operations');
   const [editingWallet, setEditingWallet] = useState<any | null>(null);
@@ -459,7 +459,7 @@ const Wallets = () => {
         daily_withdraw_limit_rem: newWallet.daily_withdraw_limit, 
         daily_deposit_limit_rem: newWallet.daily_deposit_limit 
       }]);
-      setNewWallet({ name: '', number: '', monthly_withdraw_limit: 50000, monthly_deposit_limit: 50000, daily_withdraw_limit: 10000, daily_deposit_limit: 10000, balance: 0 });
+      setNewWallet({ name: '', number: '', monthly_withdraw_limit: 200000, monthly_deposit_limit: 200000, daily_withdraw_limit: 60000, daily_deposit_limit: 60000, balance: 0 });
       setShowAddForm(false);
     } else {
       const data = await res.json();
@@ -546,11 +546,11 @@ const Wallets = () => {
     const wallet = wallets.find(w => w.id === id);
     if (wallet) {
       if (type === 'withdraw') {
-        if (amount > (wallet.daily_withdraw_limit_rem ?? 10000)) {
+        if (amount > (wallet.daily_withdraw_limit_rem ?? 60000)) {
           setNotification({ message: "المبلغ يتجاوز الحد اليومي للسحب المتبقي", type: 'error' });
           return;
         }
-        if (amount > (wallet.monthly_withdraw_limit_rem ?? 50000)) {
+        if (amount > (wallet.monthly_withdraw_limit_rem ?? 200000)) {
           setNotification({ message: "المبلغ يتجاوز الحد الشهري للسحب المتبقي", type: 'error' });
           return;
         }
@@ -559,11 +559,11 @@ const Wallets = () => {
           setNotification({ message: "المبلغ المراد إيداعه أكبر من رصيد المحفظة", type: 'error' });
           return;
         }
-        if (amount > (wallet.daily_deposit_limit_rem ?? 10000)) {
+        if (amount > (wallet.daily_deposit_limit_rem ?? 60000)) {
           setNotification({ message: "المبلغ يتجاوز الحد اليومي للإيداع المتبقي", type: 'error' });
           return;
         }
-        if (amount > (wallet.monthly_deposit_limit_rem ?? 50000)) {
+        if (amount > (wallet.monthly_deposit_limit_rem ?? 200000)) {
           setNotification({ message: "المبلغ يتجاوز الحد الشهري للإيداع المتبقي", type: 'error' });
           return;
         }
@@ -583,15 +583,15 @@ const Wallets = () => {
             return { 
               ...w, 
               balance: w.balance + amount,
-              daily_withdraw_limit_rem: (w.daily_withdraw_limit_rem ?? 10000) - amount,
-              monthly_withdraw_limit_rem: (w.monthly_withdraw_limit_rem ?? 50000) - amount
+              daily_withdraw_limit_rem: (w.daily_withdraw_limit_rem ?? 60000) - amount,
+              monthly_withdraw_limit_rem: (w.monthly_withdraw_limit_rem ?? 200000) - amount
             };
           } else {
             return { 
               ...w, 
               balance: w.balance - amount,
-              daily_deposit_limit_rem: (w.daily_deposit_limit_rem ?? 10000) - amount,
-              monthly_deposit_limit_rem: (w.monthly_deposit_limit_rem ?? 50000) - amount
+              daily_deposit_limit_rem: (w.daily_deposit_limit_rem ?? 60000) - amount,
+              monthly_deposit_limit_rem: (w.monthly_deposit_limit_rem ?? 200000) - amount
             };
           }
         }

@@ -19,33 +19,33 @@ const resetMockWalletsIfNeeded = () => {
 
     // Initialize missing new separate limit fields from limit values or old fields
     if (w.daily_withdraw_limit_rem === undefined) {
-      patch.daily_withdraw_limit_rem = w.daily_withdraw_limit ?? w.daily_limit_rem ?? w.daily_limit ?? 10000;
+      patch.daily_withdraw_limit_rem = w.daily_withdraw_limit ?? w.daily_limit_rem ?? w.daily_limit ?? 60000;
       walletUpdated = true;
     }
     if (w.monthly_withdraw_limit_rem === undefined) {
-      patch.monthly_withdraw_limit_rem = w.monthly_withdraw_limit ?? w.monthly_limit_rem ?? w.monthly_limit ?? 50000;
+      patch.monthly_withdraw_limit_rem = w.monthly_withdraw_limit ?? w.monthly_limit_rem ?? w.monthly_limit ?? 200000;
       walletUpdated = true;
     }
     if (w.daily_deposit_limit_rem === undefined) {
-      patch.daily_deposit_limit_rem = w.daily_deposit_limit ?? w.daily_limit_rem ?? w.daily_limit ?? 10000;
+      patch.daily_deposit_limit_rem = w.daily_deposit_limit ?? w.daily_limit_rem ?? w.daily_limit ?? 60000;
       walletUpdated = true;
     }
     if (w.monthly_deposit_limit_rem === undefined) {
-      patch.monthly_deposit_limit_rem = w.monthly_deposit_limit ?? w.monthly_limit_rem ?? w.monthly_limit ?? 50000;
+      patch.monthly_deposit_limit_rem = w.monthly_deposit_limit ?? w.monthly_limit_rem ?? w.monthly_limit ?? 200000;
       walletUpdated = true;
     }
 
     // Daily reset
     if (w.last_daily_reset !== todayStr) {
-      patch.daily_withdraw_limit_rem = w.daily_withdraw_limit ?? 10000;
-      patch.daily_deposit_limit_rem = w.daily_deposit_limit ?? 10000;
+      patch.daily_withdraw_limit_rem = w.daily_withdraw_limit ?? 60000;
+      patch.daily_deposit_limit_rem = w.daily_deposit_limit ?? 60000;
       patch.last_daily_reset = todayStr;
       walletUpdated = true;
     }
     // Monthly reset
     if (w.last_monthly_reset !== monthStr) {
-      patch.monthly_withdraw_limit_rem = w.monthly_withdraw_limit ?? 50000;
-      patch.monthly_deposit_limit_rem = w.monthly_deposit_limit ?? 50000;
+      patch.monthly_withdraw_limit_rem = w.monthly_withdraw_limit ?? 200000;
+      patch.monthly_deposit_limit_rem = w.monthly_deposit_limit ?? 200000;
       patch.last_monthly_reset = monthStr;
       walletUpdated = true;
     }

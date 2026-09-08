@@ -135,14 +135,14 @@ try {
     `);
     db.exec(`
       UPDATE wallets 
-      SET daily_withdraw_limit = COALESCE(daily_limit, 10000),
-          daily_deposit_limit = COALESCE(daily_limit, 10000),
-          monthly_withdraw_limit = COALESCE(monthly_limit, 50000),
-          monthly_deposit_limit = COALESCE(monthly_limit, 50000),
-          daily_withdraw_limit_rem = COALESCE(daily_limit_rem, COALESCE(daily_limit, 10000)),
-          daily_deposit_limit_rem = COALESCE(daily_limit_rem, COALESCE(daily_limit, 10000)),
-          monthly_withdraw_limit_rem = COALESCE(monthly_limit_rem, COALESCE(monthly_limit, 50000)),
-          monthly_deposit_limit_rem = COALESCE(monthly_limit_rem, COALESCE(monthly_limit, 50000));
+      SET daily_withdraw_limit = COALESCE(daily_limit, 60000),
+          daily_deposit_limit = COALESCE(daily_limit, 60000),
+          monthly_withdraw_limit = COALESCE(monthly_limit, 200000),
+          monthly_deposit_limit = COALESCE(monthly_limit, 200000),
+          daily_withdraw_limit_rem = COALESCE(daily_limit_rem, COALESCE(daily_limit, 60000)),
+          daily_deposit_limit_rem = COALESCE(daily_limit_rem, COALESCE(daily_limit, 60000)),
+          monthly_withdraw_limit_rem = COALESCE(monthly_limit_rem, COALESCE(monthly_limit, 200000)),
+          monthly_deposit_limit_rem = COALESCE(monthly_limit_rem, COALESCE(monthly_limit, 200000));
     `);
   } catch (err) {
     console.log("Wallets limits split migration failed or skipped:", err);
@@ -490,10 +490,10 @@ app.post("/api/wallets", (req, res) => {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       name, number, balance || 0, todayStr, monthStr,
-      daily_withdraw_limit, daily_deposit_limit,
-      monthly_withdraw_limit, monthly_deposit_limit,
-      daily_withdraw_limit, daily_deposit_limit,
-      monthly_withdraw_limit, monthly_deposit_limit
+      daily_withdraw_limit ?? 60000, daily_deposit_limit ?? 60000,
+      monthly_withdraw_limit ?? 200000, monthly_deposit_limit ?? 200000,
+      daily_withdraw_limit ?? 60000, daily_deposit_limit ?? 60000,
+      monthly_withdraw_limit ?? 200000, monthly_deposit_limit ?? 200000
     );
     res.json({ id: result.lastInsertRowid });
   } catch (err) {
